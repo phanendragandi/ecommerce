@@ -8,7 +8,21 @@ import Image from "next/image";
 import { useParams } from "next/navigation";
 import Loading from "@/components/Loading";
 import { useAppContext } from "@/context/AppContext";
+import { api } from "@/lib/api";
 import React from "react";
+
+// Same field mapping as context/AppContext.jsx — this page fetches the
+// single product directly by id rather than waiting on the full catalog.
+const normalizeProduct = (p) => ({
+    _id: p.id,
+    name: p.name,
+    description: p.description,
+    category: p.category,
+    price: p.price,
+    offerPrice: p.offer_price ?? p.price,
+    image: Array.isArray(p.images) && p.images.length > 0 ? p.images : [assets.upload_area],
+    stock: typeof p.stock === 'number' ? p.stock : 0,
+});
 
 const Product = () => {
 
@@ -18,17 +32,55 @@ const Product = () => {
 
     const [mainImage, setMainImage] = useState(null);
     const [productData, setProductData] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
 
     const fetchProductData = async () => {
-        const product = products.find(product => product._id === id);
-        setProductData(product);
+        setLoading(true);
+        setError(null);
+        setMainImage(null);
+        try {
+            const res = await api.get(`/api/products/${id}`, { auth: false });
+            setProductData(normalizeProduct(res.data.product));
+        } catch (err) {
+            setProductData(null);
+            setError(err.message || 'Failed to load product');
+        } finally {
+            setLoading(false);
+        }
     }
 
     useEffect(() => {
-        fetchProductData();
-    }, [id, products.length])
+        if (id) fetchProductData();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [id])
 
-    return productData ? (<>
+    if (loading) return <Loading />;
+
+    if (error || !productData) {
+        const notFound = /not found/i.test(error || '');
+        return (
+            <>
+                <Navbar />
+                <div className="min-h-[50vh] flex flex-col items-center justify-center gap-4 px-6 text-center">
+                    <p className="text-xl text-gray-500">{notFound ? 'Product not found' : error || 'Something went wrong'}</p>
+                    <div className="flex items-center gap-3">
+                        {!notFound && (
+                            <button onClick={fetchProductData} className="px-6 py-2 border rounded text-gray-500 hover:bg-slate-50 transition">
+                                Retry
+                            </button>
+                        )}
+                        <button onClick={() => router.push('/all-products')} className="px-6 py-2 border rounded text-gray-500 hover:bg-slate-50 transition">
+                            Back to all products
+                        </button>
+                    </div>
+                </div>
+                <Footer />
+            </>
+        );
+    }
+
+    return (<>
         <Navbar />
         <div className="px-6 md:px-16 lg:px-32 pt-14 space-y-10">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-16">
@@ -137,7 +189,7 @@ const Product = () => {
         </div>
         <Footer />
     </>
-    ) : <Loading />
+    )
 };
 
 export default Product;

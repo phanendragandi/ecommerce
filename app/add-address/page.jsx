@@ -4,21 +4,84 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import Image from "next/image";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { api } from "@/lib/api";
+import toast from "react-hot-toast";
+
+// Mirrors server/src/validators/addresses.ts (addressCreateSchema) so the
+// user gets instant feedback before the request round-trips.
+const PHONE_RE = /^[6-9]\d{9}$/;
+const PINCODE_RE = /^\d{6}$/;
+
+const validateAddress = (address) => {
+    const full_name = address.full_name.trim();
+    const phone = address.phone.trim();
+    const pincode = address.pincode.trim();
+    const area = address.area.trim();
+    const city = address.city.trim();
+    const state = address.state.trim();
+
+    if (!full_name || full_name.length > 120) {
+        return 'Full name is required (max 120 characters)';
+    }
+    if (!PHONE_RE.test(phone)) {
+        return 'Phone must be a valid 10-digit India phone number';
+    }
+    if (!PINCODE_RE.test(pincode)) {
+        return 'Pincode must be a 6-digit code';
+    }
+    if (!area || area.length > 200) {
+        return 'Address (area) is required (max 200 characters)';
+    }
+    if (!city || city.length > 100) {
+        return 'City is required (max 100 characters)';
+    }
+    if (!state || state.length > 100) {
+        return 'State is required (max 100 characters)';
+    }
+    return null;
+};
 
 const AddAddress = () => {
 
+    const router = useRouter();
+
     const [address, setAddress] = useState({
-        fullName: '',
-        phoneNumber: '',
+        full_name: '',
+        phone: '',
         pincode: '',
         area: '',
         city: '',
         state: '',
     })
+    const [submitting, setSubmitting] = useState(false);
 
     const onSubmitHandler = async (e) => {
         e.preventDefault();
 
+        const validationError = validateAddress(address);
+        if (validationError) {
+            toast.error(validationError);
+            return;
+        }
+
+        setSubmitting(true);
+        try {
+            await api.post('/api/addresses', {
+                full_name: address.full_name.trim(),
+                phone: address.phone.trim(),
+                pincode: address.pincode.trim(),
+                area: address.area.trim(),
+                city: address.city.trim(),
+                state: address.state.trim(),
+            });
+            toast.success('Address saved');
+            router.push('/cart');
+        } catch (err) {
+            toast.error(err.message || 'Failed to save address');
+        } finally {
+            setSubmitting(false);
+        }
     }
 
     return (
@@ -34,15 +97,15 @@ const AddAddress = () => {
                             className="px-2 py-2.5 focus:border-orange-500 transition border border-gray-500/30 rounded outline-none w-full text-gray-500"
                             type="text"
                             placeholder="Full name"
-                            onChange={(e) => setAddress({ ...address, fullName: e.target.value })}
-                            value={address.fullName}
+                            onChange={(e) => setAddress({ ...address, full_name: e.target.value })}
+                            value={address.full_name}
                         />
                         <input
                             className="px-2 py-2.5 focus:border-orange-500 transition border border-gray-500/30 rounded outline-none w-full text-gray-500"
                             type="text"
                             placeholder="Phone number"
-                            onChange={(e) => setAddress({ ...address, phoneNumber: e.target.value })}
-                            value={address.phoneNumber}
+                            onChange={(e) => setAddress({ ...address, phone: e.target.value })}
+                            value={address.phone}
                         />
                         <input
                             className="px-2 py-2.5 focus:border-orange-500 transition border border-gray-500/30 rounded outline-none w-full text-gray-500"
@@ -53,7 +116,6 @@ const AddAddress = () => {
                         />
                         <textarea
                             className="px-2 py-2.5 focus:border-orange-500 transition border border-gray-500/30 rounded outline-none w-full text-gray-500 resize-none"
-                            type="text"
                             rows={4}
                             placeholder="Address (Area and Street)"
                             onChange={(e) => setAddress({ ...address, area: e.target.value })}
@@ -76,8 +138,12 @@ const AddAddress = () => {
                             />
                         </div>
                     </div>
-                    <button type="submit" className="max-w-sm w-full mt-6 bg-orange-600 text-white py-3 hover:bg-orange-700 uppercase">
-                        Save address
+                    <button
+                        type="submit"
+                        disabled={submitting}
+                        className="max-w-sm w-full mt-6 bg-orange-600 text-white py-3 hover:bg-orange-700 uppercase disabled:opacity-60"
+                    >
+                        {submitting ? 'Saving...' : 'Save address'}
                     </button>
                 </form>
                 <Image
