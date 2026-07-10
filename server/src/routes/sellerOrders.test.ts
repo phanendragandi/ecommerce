@@ -111,6 +111,71 @@ describe('/api/seller/orders', () => {
         .send({ status: 'processing' });
       expect(res.status).toBe(401);
     });
+
+    it('400 on a malformed order id', async () => {
+      const client = sellerClient();
+      client.from.mockReturnValueOnce(ok({ role: 'seller' }));
+      mockedSupabaseAdmin.mockReturnValue(client as any);
+
+      const res = await request(app)
+        .patch('/api/seller/orders/not-a-uuid/status')
+        .set('Authorization', 'Bearer t')
+        .send({ status: 'processing' });
+
+      expect(res.status).toBe(400);
+    });
+
+    it('400 on a status value outside the known enum', async () => {
+      const client = sellerClient();
+      client.from.mockReturnValueOnce(ok({ role: 'seller' }));
+      mockedSupabaseAdmin.mockReturnValue(client as any);
+
+      const res = await request(app)
+        .patch(`/api/seller/orders/${ORDER_ID}/status`)
+        .set('Authorization', 'Bearer t')
+        .send({ status: 'in_orbit' });
+
+      expect(res.status).toBe(400);
+    });
+
+    it.each([
+      ['processing', 'shipped'],
+      ['shipped', 'out_for_delivery'],
+      ['out_for_delivery', 'delivered'],
+    ])('200 on the valid adjacent transition %s → %s', async (from, to) => {
+      const client = sellerClient();
+      client.from
+        .mockReturnValueOnce(ok({ role: 'seller' }))
+        .mockReturnValueOnce(ok({ id: ORDER_ID, status: from }))
+        .mockReturnValueOnce(ok({ id: 'oi-1' }))
+        .mockReturnValueOnce(ok(null))
+        .mockReturnValueOnce(ok(null));
+      mockedSupabaseAdmin.mockReturnValue(client as any);
+
+      const res = await request(app)
+        .patch(`/api/seller/orders/${ORDER_ID}/status`)
+        .set('Authorization', 'Bearer t')
+        .send({ status: to });
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.status).toBe(to);
+    });
+
+    it('400 when the order has already reached a terminal state (delivered → anything)', async () => {
+      const client = sellerClient();
+      client.from
+        .mockReturnValueOnce(ok({ role: 'seller' }))
+        .mockReturnValueOnce(ok({ id: ORDER_ID, status: 'delivered' }))
+        .mockReturnValueOnce(ok({ id: 'oi-1' }));
+      mockedSupabaseAdmin.mockReturnValue(client as any);
+
+      const res = await request(app)
+        .patch(`/api/seller/orders/${ORDER_ID}/status`)
+        .set('Authorization', 'Bearer t')
+        .send({ status: 'processing' });
+
+      expect(res.status).toBe(400);
+    });
   });
 
   describe('GET /', () => {
@@ -167,6 +232,24 @@ describe('/api/seller/orders', () => {
       expect(order.seller_subtotal).toBe(100);
       expect(order.amount).toBe(100);
       expect(order.events).toHaveLength(1);
+    });
+
+    it('200 returns an empty list when the seller has no products yet', async () => {
+      const client = sellerClient();
+      client.from
+        .mockReturnValueOnce(ok({ role: 'seller' }))
+        .mockReturnValueOnce(ok([])); // no products
+      mockedSupabaseAdmin.mockReturnValue(client as any);
+
+      const res = await request(app).get('/api/seller/orders').set('Authorization', 'Bearer t');
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.orders).toEqual([]);
+    });
+
+    it('401 without a token', async () => {
+      const res = await request(app).get('/api/seller/orders');
+      expect(res.status).toBe(401);
     });
   });
 });

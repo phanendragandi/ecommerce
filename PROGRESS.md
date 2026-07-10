@@ -50,10 +50,17 @@ Commits: `19d129f` baseline · `c224ee1` scaffold cleanup · `3909c99` server sc
 - ✅ Dashboard page (stat cards + revenue AreaChart + status BarChart + low-stock), Reports page (date presets, interval, tables, client-side CSV export); Add Product moved to `/seller/add-product`; Sidebar updated. Recharts added.
 - ✅ **Gate G4 (static):** 79/79 tests (incl. seller-isolation + paid-only AOV proofs), tsc clean, root build green. Reconciliation SQL prepared in commit history for the live-DB check once Supabase is linked.
 
+## Phase 5 — QA + security release gate ✅ (2026-07-10)
+
+- ✅ **Security release gate: PASS** — no Critical/High; all 9 prior audit fixes verified present (no regressions); git history clean of secrets; Phase 4 aggregates seller-isolated. Release-gate follow-ups fixed: CSV formula-injection escaping, paginated stats aggregation (no silent >1000-row truncation).
+- ✅ **QA regression: 120/120 tests** (41 added: IDOR attempts on addresses/cart/orders, payload limits, transition chains, date boundaries, webhook edge cases). Manual live-stack script: `qa/manual-regression.md`.
+- ✅ QA bugs fixed: webhook unknown-order 200-ack (no retry storm); errorHandler honors framework 4xx (413/400 no longer 500); ESLint flat config fixed — **`.jsx` files were previously never linted at all** (latent config bug, now covered) + Footer lint error; `addresses` wired into AppContext; hardcoded `$` → `{currency}`; catalog error state + Retry on home/all-products.
+- Remaining non-blocking: `react-hooks/exhaustive-deps` warning in order-placed page.
+- ⏸ Live-stack items deferred to deploy window (need user credentials): Gate G1 db push + RLS spot-check, Gate G3B Razorpay e2e, Gate G4 SQL reconciliation, manual regression run.
+
 ## Pending
 
-- ⬜ Phase 5 — QA + security release gate
-- ⬜ Phase 6 — Deploy (`devops-engineer`) — Gate G6
+- ⬜ Phase 6 — Deploy (`devops-engineer`) — Gate G6 — **blocked on user:** Supabase project link + env values, Razorpay keys (test for e2e, live for prod), Hostinger VPS access + domain.
 
 ## Needed from user
 

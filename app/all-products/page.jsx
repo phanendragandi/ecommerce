@@ -7,7 +7,7 @@ import { useAppContext } from "@/context/AppContext";
 
 const AllProducts = () => {
 
-    const { products, productsLoading } = useAppContext();
+    const { products, productsLoading, productsError, fetchProductData } = useAppContext();
 
     return (
         <>
@@ -19,6 +19,13 @@ const AllProducts = () => {
                 </div>
                 {productsLoading ? (
                     <div className="w-full"><Loading /></div>
+                ) : productsError ? (
+                    <div className="w-full flex flex-col items-center gap-4 py-20">
+                        <p className="text-gray-500">{productsError}</p>
+                        <button onClick={fetchProductData} className="px-6 py-2 border rounded text-gray-500 hover:bg-slate-50 transition">
+                            Retry
+                        </button>
+                    </div>
                 ) : products.length === 0 ? (
                     <p className="w-full text-center text-gray-500 py-20">No products available yet.</p>
                 ) : (

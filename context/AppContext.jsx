@@ -88,6 +88,7 @@ export const AppContextProvider = (props) => {
 
     const [products, setProducts] = useState([])
     const [productsLoading, setProductsLoading] = useState(true)
+    const [productsError, setProductsError] = useState(null)
 
     const [user, setUser] = useState(null)
     const [profile, setProfile] = useState(null)
@@ -96,6 +97,9 @@ export const AppContextProvider = (props) => {
     const [isSeller, setIsSeller] = useState(false)
 
     const [cartItems, setCartItems] = useState({})
+
+    const [addresses, setAddresses] = useState([])
+    const [addressesLoading, setAddressesLoading] = useState(false)
 
     const productsRef = useRef(products)
     useEffect(() => { productsRef.current = products }, [products])
@@ -110,11 +114,14 @@ export const AppContextProvider = (props) => {
 
     const fetchProductData = useCallback(async () => {
         setProductsLoading(true)
+        setProductsError(null)
         try {
             const res = await api.get('/api/products?limit=100', { auth: false })
             setProducts((res?.data?.products ?? []).map(normalizeProduct))
         } catch (err) {
-            toast.error(err.message || 'Failed to load products')
+            const message = err.message || 'Failed to load products'
+            setProductsError(message)
+            toast.error(message)
         } finally {
             setProductsLoading(false)
         }
@@ -142,6 +149,27 @@ export const AppContextProvider = (props) => {
     useEffect(() => {
         setIsSeller(profile?.role === 'seller')
     }, [profile])
+
+    // ---- Addresses ------------------------------------------------------
+    // Fetched lazily (on login, or on demand via refresh) so OrderSummary
+    // and the add-address page can both read/refresh a single shared list
+    // instead of each holding their own out-of-sync copy.
+
+    // Callers are expected to only invoke this when a session exists (the
+    // auth bootstrap below already gates it; add-address calls it right
+    // after a successful authenticated POST). No internal auth guard here
+    // to avoid a stale-ref race right after sign-in.
+    const fetchAddresses = useCallback(async () => {
+        setAddressesLoading(true)
+        try {
+            const res = await api.get('/api/addresses')
+            setAddresses(res?.data?.addresses ?? [])
+        } catch (err) {
+            toast.error(err.message || 'Failed to load your addresses')
+        } finally {
+            setAddressesLoading(false)
+        }
+    }, [])
 
     // ---- Cart sync ----------------------------------------------------
 
@@ -208,8 +236,10 @@ export const AppContextProvider = (props) => {
             setAuthLoading(false)
             if (sessionUser) {
                 await fetchUserData()
+                await fetchAddresses()
             } else {
                 setProfile(null)
+                setAddresses([])
             }
             await hydrateCart(sessionUser)
         }
@@ -223,9 +253,11 @@ export const AppContextProvider = (props) => {
 
             if (event === 'SIGNED_IN') {
                 await fetchUserData()
+                await fetchAddresses()
                 await hydrateCart(sessionUser)
             } else if (event === 'SIGNED_OUT') {
                 setProfile(null)
+                setAddresses([])
                 writeGuestCart({})
                 setCartItems({})
                 cartHydratedRef.current = true
@@ -334,8 +366,10 @@ export const AppContextProvider = (props) => {
         user, profile, authLoading, profileLoading, logout,
         isSeller, setIsSeller,
         userData: profile, fetchUserData,
+        // addresses
+        addresses, addressesLoading, fetchAddresses,
         // products
-        products, productsLoading, fetchProductData,
+        products, productsLoading, productsError, fetchProductData,
         // cart
         cartItems, setCartItems,
         addToCart, updateCartQuantity, clearCart, flushCart,

@@ -6,6 +6,7 @@ import Image from "next/image";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
+import { useAppContext } from "@/context/AppContext";
 import toast from "react-hot-toast";
 
 // Mirrors server/src/validators/addresses.ts (addressCreateSchema) so the
@@ -45,6 +46,7 @@ const validateAddress = (address) => {
 const AddAddress = () => {
 
     const router = useRouter();
+    const { fetchAddresses } = useAppContext();
 
     const [address, setAddress] = useState({
         full_name: '',
@@ -76,6 +78,11 @@ const AddAddress = () => {
                 state: address.state.trim(),
             });
             toast.success('Address saved');
+            // Refresh the shared context list so OrderSummary's dropdown on
+            // /cart shows the new address immediately, without its own fetch.
+            if (typeof fetchAddresses === 'function') {
+                await fetchAddresses();
+            }
             router.push('/cart');
         } catch (err) {
             toast.error(err.message || 'Failed to save address');

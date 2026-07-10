@@ -326,6 +326,53 @@ describe('/api/seller/reports/sales', () => {
     expect(res.status).toBe(400);
   });
 
+  it('200 when the range is exactly 366 days (boundary — inclusive)', async () => {
+    const client = sellerClient();
+    client.from
+      .mockReturnValueOnce(ok({ role: 'seller' }))
+      .mockReturnValueOnce(ok([])); // no products — zero-filled series only
+    mockedSupabaseAdmin.mockReturnValue(client as any);
+
+    // 2025-07-01 .. 2026-07-02 inclusive spans exactly 366 days:
+    // (Date.parse('2026-07-02') - Date.parse('2025-07-01')) / day === 366.
+    const res = await request(app)
+      .get('/api/seller/reports/sales')
+      .query({ from: '2025-07-01', to: '2026-07-02' })
+      .set('Authorization', 'Bearer t');
+
+    expect(res.status).toBe(200);
+  });
+
+  it('400 when the range is 367 days (one past the boundary)', async () => {
+    const client = sellerClient();
+    client.from.mockReturnValueOnce(ok({ role: 'seller' }));
+    mockedSupabaseAdmin.mockReturnValue(client as any);
+
+    const res = await request(app)
+      .get('/api/seller/reports/sales')
+      .query({ from: '2025-07-01', to: '2026-07-03' })
+      .set('Authorization', 'Bearer t');
+
+    expect(res.status).toBe(400);
+  });
+
+  it('200 zero-length range (from === to, same-day report) returns a single bucket', async () => {
+    const client = sellerClient();
+    client.from
+      .mockReturnValueOnce(ok({ role: 'seller' }))
+      .mockReturnValueOnce(ok([])); // no products
+    mockedSupabaseAdmin.mockReturnValue(client as any);
+
+    const res = await request(app)
+      .get('/api/seller/reports/sales')
+      .query({ from: '2026-07-05', to: '2026-07-05' })
+      .set('Authorization', 'Bearer t');
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.series).toHaveLength(1);
+    expect(res.body.data.series[0]).toMatchObject({ bucket: '2026-07-05', revenue: 0, units: 0, orders: 0 });
+  });
+
   it('400 on an invalid interval', async () => {
     const client = sellerClient();
     client.from.mockReturnValueOnce(ok({ role: 'seller' }));
@@ -444,6 +491,46 @@ describe('/api/seller/reports/top-products', () => {
     const res = await request(app)
       .get('/api/seller/reports/top-products')
       .query({ from: '2026-07-01', to: '2026-07-03' })
+      .set('Authorization', 'Bearer t');
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.products).toEqual([]);
+  });
+
+  it('200 when the range is exactly 366 days (boundary — inclusive)', async () => {
+    const client = sellerClient();
+    client.from.mockReturnValueOnce(ok({ role: 'seller' })).mockReturnValueOnce(ok([]));
+    mockedSupabaseAdmin.mockReturnValue(client as any);
+
+    const res = await request(app)
+      .get('/api/seller/reports/top-products')
+      .query({ from: '2025-07-01', to: '2026-07-02' })
+      .set('Authorization', 'Bearer t');
+
+    expect(res.status).toBe(200);
+  });
+
+  it('400 when the range is 367 days (one past the boundary)', async () => {
+    const client = sellerClient();
+    client.from.mockReturnValueOnce(ok({ role: 'seller' }));
+    mockedSupabaseAdmin.mockReturnValue(client as any);
+
+    const res = await request(app)
+      .get('/api/seller/reports/top-products')
+      .query({ from: '2025-07-01', to: '2026-07-03' })
+      .set('Authorization', 'Bearer t');
+
+    expect(res.status).toBe(400);
+  });
+
+  it('200 zero-length range (from === to) is accepted', async () => {
+    const client = sellerClient();
+    client.from.mockReturnValueOnce(ok({ role: 'seller' })).mockReturnValueOnce(ok([]));
+    mockedSupabaseAdmin.mockReturnValue(client as any);
+
+    const res = await request(app)
+      .get('/api/seller/reports/top-products')
+      .query({ from: '2026-07-05', to: '2026-07-05' })
       .set('Authorization', 'Bearer t');
 
     expect(res.status).toBe(200);

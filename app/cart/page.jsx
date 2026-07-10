@@ -9,7 +9,7 @@ import { useAppContext } from "@/context/AppContext";
 
 const Cart = () => {
 
-  const { products, productsLoading, router, cartItems, addToCart, updateCartQuantity, getCartCount } = useAppContext();
+  const { products, productsLoading, router, cartItems, addToCart, updateCartQuantity, getCartCount, currency } = useAppContext();
 
   const cartProductIds = Object.keys(cartItems).filter((id) => cartItems[id] > 0);
 
@@ -84,7 +84,7 @@ const Cart = () => {
                             </button>
                           </div>
                         </td>
-                        <td className="py-4 md:px-4 px-1 text-gray-600">${product.offerPrice}</td>
+                        <td className="py-4 md:px-4 px-1 text-gray-600">{currency}{product.offerPrice}</td>
                         <td className="py-4 md:px-4 px-1">
                           <div className="flex items-center md:gap-2 gap-1">
                             <button onClick={() => updateCartQuantity(product._id, cartItems[itemId] - 1)}>
@@ -104,7 +104,7 @@ const Cart = () => {
                             </button>
                           </div>
                         </td>
-                        <td className="py-4 md:px-4 px-1 text-gray-600">${(product.offerPrice * cartItems[itemId]).toFixed(2)}</td>
+                        <td className="py-4 md:px-4 px-1 text-gray-600">{currency}{(product.offerPrice * cartItems[itemId]).toFixed(2)}</td>
                       </tr>
                     );
                   })}

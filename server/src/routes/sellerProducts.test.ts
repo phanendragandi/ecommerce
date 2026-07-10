@@ -115,6 +115,33 @@ describe('/api/seller/products', () => {
     expect(res.status).toBe(404);
   });
 
+  it('PATCH 400 on an empty body (no fields to update)', async () => {
+    const client = sellerClient();
+    client.from.mockReturnValueOnce(ok({ role: 'seller' }));
+    mockedSupabaseAdmin.mockReturnValue(client as any);
+
+    const res = await request(app)
+      .patch(`/api/seller/products/${PRODUCT_ID}`)
+      .set('Authorization', 'Bearer t')
+      .send({});
+
+    expect(res.status).toBe(400);
+  });
+
+  it('POST 400 when a required field is missing', async () => {
+    const client = sellerClient();
+    client.from.mockReturnValueOnce(ok({ role: 'seller' }));
+    mockedSupabaseAdmin.mockReturnValue(client as any);
+
+    const { category, ...withoutCategory } = validProduct;
+    const res = await request(app)
+      .post('/api/seller/products')
+      .set('Authorization', 'Bearer t')
+      .send(withoutCategory);
+
+    expect(res.status).toBe(400);
+  });
+
   it('DELETE 200 soft-deletes an owned product', async () => {
     const client = sellerClient();
     client.from
@@ -183,6 +210,43 @@ describe('/api/seller/products', () => {
         });
 
       expect(res.status).toBe(401);
+    });
+
+    it('404 when the product is not owned by the caller', async () => {
+      const client = sellerClient();
+      client.from
+        .mockReturnValueOnce(ok({ role: 'seller' })) // requireSeller
+        .mockReturnValueOnce(ok(null)); // ownership fetch: no match
+      mockedSupabaseAdmin.mockReturnValue(client as any);
+
+      const res = await request(app)
+        .post(`/api/seller/products/${PRODUCT_ID}/images`)
+        .set('Authorization', 'Bearer t')
+        .attach('images', Buffer.from('fake-image-bytes'), {
+          filename: 'a.jpg',
+          contentType: 'image/jpeg',
+        });
+
+      expect(res.status).toBe(404);
+    });
+
+    it('400 when more than 4 files are attached (multer file-count limit)', async () => {
+      const client = sellerClient();
+      client.from.mockReturnValueOnce(ok({ role: 'seller' }));
+      mockedSupabaseAdmin.mockReturnValue(client as any);
+
+      let req = request(app)
+        .post(`/api/seller/products/${PRODUCT_ID}/images`)
+        .set('Authorization', 'Bearer t');
+      for (let i = 0; i < 5; i += 1) {
+        req = req.attach('images', Buffer.from('fake-image-bytes'), {
+          filename: `a${i}.jpg`,
+          contentType: 'image/jpeg',
+        });
+      }
+      const res = await req;
+
+      expect(res.status).toBe(400);
     });
   });
 });
