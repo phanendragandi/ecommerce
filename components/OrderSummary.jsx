@@ -249,13 +249,11 @@ const OrderSummary = () => {
             <p className="text-gray-600">Shipping Fee</p>
             <p className="font-medium text-gray-800">Free</p>
           </div>
-          <div className="flex justify-between">
-            <p className="text-gray-600">Tax (2%)</p>
-            <p className="font-medium text-gray-800">{currency}{Math.floor(getCartAmount() * 0.02)}</p>
-          </div>
+          {/* No tax line: the server charges the untaxed subtotal, so the
+              displayed total must equal exactly what will be charged. */}
           <div className="flex justify-between text-lg md:text-xl font-medium border-t pt-3">
             <p>Total</p>
-            <p>{currency}{getCartAmount() + Math.floor(getCartAmount() * 0.02)}</p>
+            <p>{currency}{getCartAmount()}</p>
           </div>
         </div>
       </div>

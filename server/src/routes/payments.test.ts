@@ -3,7 +3,7 @@ import request from 'supertest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../app.js';
 import { supabaseAdmin } from '../lib/supabaseAdmin.js';
-import { QueryBuilder, createMockClient, mockAuthenticatedUser, ok } from '../test/supabaseMock.js';
+import { QueryBuilder, createMockClient, fail, mockAuthenticatedUser, ok } from '../test/supabaseMock.js';
 
 const KEY_SECRET = 'test_key_secret';
 const WEBHOOK_SECRET = 'test_webhook_secret';
@@ -289,6 +289,23 @@ describe('/api/payments', () => {
         .send(raw);
 
       expect(res.status).toBe(200);
+      expect(client.rpc).not.toHaveBeenCalled();
+    });
+
+    it('500 on a transient processing error so Razorpay retries', async () => {
+      const client = createMockClient();
+      // Order load fails before any claim/mutation — capturePayment throws.
+      client.from.mockReturnValueOnce(fail('db unavailable'));
+      mockedSupabaseAdmin.mockReturnValue(client as any);
+
+      const raw = capturePayload();
+      const res = await request(app)
+        .post('/api/payments/webhook')
+        .set('Content-Type', 'application/json')
+        .set('X-Razorpay-Signature', webhookSignature(raw))
+        .send(raw);
+
+      expect(res.status).toBe(500);
       expect(client.rpc).not.toHaveBeenCalled();
     });
   });

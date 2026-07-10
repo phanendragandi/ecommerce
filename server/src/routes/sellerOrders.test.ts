@@ -60,6 +60,22 @@ describe('/api/seller/orders', () => {
       expect(res.status).toBe(400);
     });
 
+    it('400 when a seller attempts a cancellation (paid → cancelled is admin-only)', async () => {
+      const client = sellerClient();
+      client.from
+        .mockReturnValueOnce(ok({ role: 'seller' }))
+        .mockReturnValueOnce(ok({ id: ORDER_ID, status: 'paid' }))
+        .mockReturnValueOnce(ok({ id: 'oi-1' }));
+      mockedSupabaseAdmin.mockReturnValue(client as any);
+
+      const res = await request(app)
+        .patch(`/api/seller/orders/${ORDER_ID}/status`)
+        .set('Authorization', 'Bearer t')
+        .send({ status: 'cancelled' });
+
+      expect(res.status).toBe(400);
+    });
+
     it('404 when the seller owns no product in the order', async () => {
       const client = sellerClient();
       client.from
@@ -98,7 +114,8 @@ describe('/api/seller/orders', () => {
   });
 
   describe('GET /', () => {
-    it("200 lists orders containing the seller's products", async () => {
+    it("200 returns ONLY the seller's items + a seller-scoped subtotal in a multi-seller order", async () => {
+      const OTHER_PRODUCT_ID = '33333333-3333-3333-3333-333333333333';
       const client = sellerClient();
       client.from
         .mockReturnValueOnce(ok({ role: 'seller' })) // requireSeller
@@ -108,17 +125,23 @@ describe('/api/seller/orders', () => {
           ok([
             {
               id: ORDER_ID,
-              amount: 100,
               currency: 'INR',
               status: 'paid',
               payment_status: 'paid',
               created_at: '2026-07-10T00:00:00Z',
+              // Shared order: one item belongs to this seller, one to another.
               order_items: [
                 {
                   product_id: PRODUCT_ID,
                   quantity: 2,
                   price_at_purchase: 50,
-                  product: { name: 'Widget', images: ['a.jpg'] },
+                  product: { name: 'Widget', images: ['a.jpg'], seller_id: 'seller-1' },
+                },
+                {
+                  product_id: OTHER_PRODUCT_ID,
+                  quantity: 5,
+                  price_at_purchase: 999,
+                  product: { name: 'Rival Gizmo', images: ['b.jpg'], seller_id: 'seller-2' },
                 },
               ],
             },
@@ -133,8 +156,17 @@ describe('/api/seller/orders', () => {
 
       expect(res.status).toBe(200);
       expect(res.body.data.orders).toHaveLength(1);
-      expect(res.body.data.orders[0].items[0].product.name).toBe('Widget');
-      expect(res.body.data.orders[0].events).toHaveLength(1);
+      const order = res.body.data.orders[0];
+      // Only this seller's single item — the co-seller's item is not exposed.
+      expect(order.items).toHaveLength(1);
+      expect(order.items[0].product.name).toBe('Widget');
+      // Co-seller's product data must never leak, incl. seller_id.
+      expect(JSON.stringify(order)).not.toContain('Rival Gizmo');
+      expect(JSON.stringify(order)).not.toContain('seller_id');
+      // Money figure is the seller subtotal (50 * 2 = 100), not the full order.
+      expect(order.seller_subtotal).toBe(100);
+      expect(order.amount).toBe(100);
+      expect(order.events).toHaveLength(1);
     });
   });
 });

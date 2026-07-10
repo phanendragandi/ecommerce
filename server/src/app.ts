@@ -12,7 +12,6 @@ import { paymentsRouter, webhookHandler } from './routes/payments.js';
 import { productsRouter } from './routes/products.js';
 import { sellerOrdersRouter } from './routes/sellerOrders.js';
 import { sellerProductsRouter } from './routes/sellerProducts.js';
-import { strictLimiter } from './middleware/rateLimit.js';
 
 export function createApp(): express.Express {
   const app = express();
@@ -31,12 +30,13 @@ export function createApp(): express.Express {
   );
 
   // NOTE (Phase 3B): the Razorpay webhook route must be mounted with
-  // express.raw() BEFORE this json parser so its HMAC is computed over
-  // the exact raw body. strictLimiter still applies (money-adjacent), and
-  // the handler self-authenticates via the X-Razorpay-Signature HMAC.
+  // express.raw() BEFORE this json parser so its HMAC is computed over the
+  // exact raw body. It is intentionally EXEMPT from both rate limiters — the
+  // X-Razorpay-Signature HMAC is the authentication, and IP-based limiting
+  // could 429 a legitimate Razorpay redelivery burst. Mounting it here (ahead
+  // of express.json + apiLimiter) keeps it off both.
   app.post(
     '/api/payments/webhook',
-    strictLimiter,
     express.raw({ type: 'application/json', limit: '1mb' }),
     webhookHandler,
   );

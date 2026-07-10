@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { attachEvents } from './orders.js';
+import { fetchEventsByOrder, shapeEvents } from './orders.js';
 import { supabaseAdmin } from '../lib/supabaseAdmin.js';
 import { isValidSellerTransition, type OrderStatus } from '../lib/orderStatus.js';
 import { requireAuth, requireSeller } from '../middleware/auth.js';
@@ -11,8 +11,27 @@ export const sellerOrdersRouter = Router();
 
 sellerOrdersRouter.use(requireAuth, requireSeller);
 
+interface SellerItemEmbed {
+  product_id: string;
+  quantity: number;
+  price_at_purchase: number | string;
+  product: { name: string; images: string[]; seller_id: string } | null;
+}
+
+interface SellerOrderEmbed {
+  id: string;
+  currency: string;
+  status: string;
+  payment_status: string;
+  created_at: string;
+  order_items: SellerItemEmbed[] | null;
+}
+
 // GET /api/seller/orders — orders containing at least one of this seller's
-// products, newest first, in the same shape as GET /api/orders.
+// products, newest first. IMPORTANT: the response is SELLER-SCOPED — only the
+// seller's own line items are returned, and the money figure is their
+// `seller_subtotal` (not the buyer's full order amount), so a seller can never
+// see co-sellers' items or the whole-order total in a multi-seller order.
 sellerOrdersRouter.get('/', async (req, res, next) => {
   try {
     const admin = supabaseAdmin();
@@ -48,12 +67,13 @@ sellerOrdersRouter.get('/', async (req, res, next) => {
       return;
     }
 
-    // 3. The orders + embedded items.
+    // 3. The orders + embedded items (product carries seller_id so we can
+    //    filter each order down to THIS seller's items).
     const { data: ordersData, error: ordersError } = await admin
       .from('orders')
       .select(
-        'id, amount, currency, status, payment_status, created_at, ' +
-          'order_items(product_id, quantity, price_at_purchase, product:products(name, images))',
+        'id, currency, status, payment_status, created_at, ' +
+          'order_items(product_id, quantity, price_at_purchase, product:products(name, images, seller_id))',
       )
       .in('id', orderIds)
       .order('created_at', { ascending: false });
@@ -61,9 +81,43 @@ sellerOrdersRouter.get('/', async (req, res, next) => {
       throw new HttpError(500, 'Failed to load seller orders');
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const orders = await attachEvents((ordersData ?? []) as any);
-    res.json({ success: true, data: { orders } });
+    const orders = (ordersData ?? []) as unknown as SellerOrderEmbed[];
+    const eventsByOrder = await fetchEventsByOrder(orders.map((order) => order.id));
+
+    const shaped = orders.map((order) => {
+      // Only this seller's line items — never expose co-sellers' items.
+      const sellerItems = (order.order_items ?? []).filter(
+        (item) => item.product?.seller_id === sellerId,
+      );
+      const sellerSubtotal =
+        Math.round(
+          sellerItems.reduce(
+            (sum, item) => sum + Number(item.price_at_purchase) * item.quantity,
+            0,
+          ) * 100,
+        ) / 100;
+
+      return {
+        id: order.id,
+        // Least-breaking: `amount` is kept but re-scoped to the seller's
+        // subtotal, and also exposed explicitly as `seller_subtotal`.
+        amount: sellerSubtotal,
+        seller_subtotal: sellerSubtotal,
+        currency: order.currency,
+        status: order.status,
+        payment_status: order.payment_status,
+        created_at: order.created_at,
+        items: sellerItems.map((item) => ({
+          product_id: item.product_id,
+          quantity: item.quantity,
+          price_at_purchase: item.price_at_purchase,
+          product: item.product ? { name: item.product.name, images: item.product.images } : null,
+        })),
+        events: shapeEvents(eventsByOrder.get(order.id)),
+      };
+    });
+
+    res.json({ success: true, data: { orders: shaped } });
   } catch (err) {
     next(err);
   }

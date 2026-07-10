@@ -29,10 +29,23 @@ Commits: `19d129f` baseline · `c224ee1` scaffold cleanup · `3909c99` server sc
 - ✅ **Gate G2:** tsc strict clean; 34/34 vitest+supertest green (happy + 401/403 + zod 400 per route). Orchestrator reviewed auth/ownership/upload paths against CLAUDE.md — clean.
 - Note: response envelope is `{ success, data }` (matches scaffold convention).
 
+## Phase 3A — Frontend wiring ✅ (Gate G3A static PASSED — 2026-07-10)
+
+- ✅ Login/signup (email/password + Google OAuth) + `/auth/callback` (open-redirect-safe `next`), session middleware.
+- ✅ AppContext: real session/profile, `isSeller` from DB role, live products, debounced cart sync + guest merge, `clearCart`/`flushCart`.
+- ✅ Seller gating (layout, no flash) + every page on live data with loading/error/empty states; zero `dummyData` outside assets.
+- ⚠️ Root build requires `NEXT_PUBLIC_SUPABASE_URL`/`ANON_KEY` at build time (set in Vercel; devops Phase 6 note).
+
+## Phase 3B — Payments & tracking ✅ (Gate G3B static PASSED — 2026-07-10)
+
+- ✅ Checkout (server-side pricing only), verify (timing-safe HMAC), webhook (raw-body HMAC, source of truth, 500-on-transient for redelivery, no IP limiter — HMAC is auth), CAS-idempotent capture (no double stock decrement under concurrency), `decrement_stock` RPC, order_events timeline, adjacent-only transitions.
+- ✅ Frontend: Razorpay Checkout in OrderSummary (display total == charged amount), OrderTimeline component, order-placed flow.
+- ✅ **Post-3B security audit: PASS** (no Critical/High). Mediums fixed: seller order responses scoped to own items + seller subtotal (M1); sellers restricted to fulfillment transitions, cancel/refund reserved for future admin path (M2). Lows fixed: OAuth open redirect (L3), webhook limiter/retry semantics (L4), `[ALERT][manual-review]` marker on decrement failure (L5).
+- ⏸ **Gate G3B live half blocked on user:** Razorpay test-mode e2e (pay twice, webhook replay, tamper test) needs Razorpay test keys + linked Supabase.
+- Known limitations (documented): stock validated at checkout but reserved only at capture; multi-seller orders share one fulfillment status.
+
 ## Pending
 
-- ⬜ Phase 3A — Frontend wiring (`frontend-engineer`) — Gate G3A
-- ⬜ Phase 3B — Payments & tracking (`payments-engineer`) — Gate G3B
 - ⬜ Phase 4 — Seller dashboard (`dashboard-engineer`) — Gate G4
 - ⬜ Phase 5 — QA + security release gate
 - ⬜ Phase 6 — Deploy (`devops-engineer`) — Gate G6

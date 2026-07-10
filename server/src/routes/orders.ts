@@ -62,6 +62,13 @@ ordersRouter.post('/checkout', strictLimiter, async (req, res, next) => {
       price_at_purchase: number;
     }> = [];
 
+    // KNOWN LIMITATION (deferred): this is a soft, advisory stock check only —
+    // stock is not RESERVED at checkout, it is decremented atomically at
+    // payment capture (see decrement_stock in capturePayment). Between
+    // checkout and capture, concurrent buyers can oversell; the capture-time
+    // RPC is the hard guard (it raises on insufficient stock and triggers the
+    // [ALERT][manual-review] path). Full checkout-time reservation with expiry
+    // is a planned follow-up.
     for (const item of body.items) {
       const product = productById.get(item.product_id);
       if (!product) {
@@ -202,28 +209,50 @@ ordersRouter.get('/', async (req, res, next) => {
 });
 
 /**
- * Fetch the `order_events` timeline for a set of orders (ascending) and fold
- * everything into the pinned response shape. Shared by buyer + seller reads.
+ * Fetch the `order_events` timeline (ascending) for a set of orders, grouped
+ * by order id. Shared by the buyer + seller reads.
+ */
+export async function fetchEventsByOrder(orderIds: string[]): Promise<Map<string, EventRow[]>> {
+  const eventsByOrder = new Map<string, EventRow[]>();
+  if (orderIds.length === 0) {
+    return eventsByOrder;
+  }
+
+  const { data: eventsData, error: eventsError } = await supabaseAdmin()
+    .from('order_events')
+    .select('order_id, status, note, created_at')
+    .in('order_id', orderIds)
+    .order('created_at', { ascending: true });
+  if (eventsError) {
+    throw new HttpError(500, 'Failed to fetch order events');
+  }
+  for (const event of (eventsData ?? []) as EventRow[]) {
+    const bucket = eventsByOrder.get(event.order_id) ?? [];
+    bucket.push(event);
+    eventsByOrder.set(event.order_id, bucket);
+  }
+  return eventsByOrder;
+}
+
+/** Shape a grouped events bucket into the pinned response array. */
+export function shapeEvents(events: EventRow[] | undefined): Array<{
+  status: string;
+  note: string | null;
+  created_at: string;
+}> {
+  return (events ?? []).map((event) => ({
+    status: event.status,
+    note: event.note,
+    created_at: event.created_at,
+  }));
+}
+
+/**
+ * Fold buyer orders (full order + all items) into the pinned response shape.
+ * Buyer-only: the caller owns the whole order, so all items are theirs.
  */
 export async function attachEvents(orders: OrderEmbed[]): Promise<unknown[]> {
-  const orderIds = orders.map((order) => order.id);
-  const eventsByOrder = new Map<string, EventRow[]>();
-
-  if (orderIds.length > 0) {
-    const { data: eventsData, error: eventsError } = await supabaseAdmin()
-      .from('order_events')
-      .select('order_id, status, note, created_at')
-      .in('order_id', orderIds)
-      .order('created_at', { ascending: true });
-    if (eventsError) {
-      throw new HttpError(500, 'Failed to fetch order events');
-    }
-    for (const event of (eventsData ?? []) as EventRow[]) {
-      const bucket = eventsByOrder.get(event.order_id) ?? [];
-      bucket.push(event);
-      eventsByOrder.set(event.order_id, bucket);
-    }
-  }
+  const eventsByOrder = await fetchEventsByOrder(orders.map((order) => order.id));
 
   return orders.map((order) => ({
     id: order.id,
@@ -238,10 +267,6 @@ export async function attachEvents(orders: OrderEmbed[]): Promise<unknown[]> {
       price_at_purchase: item.price_at_purchase,
       product: item.product ? { name: item.product.name, images: item.product.images } : null,
     })),
-    events: (eventsByOrder.get(order.id) ?? []).map((event) => ({
-      status: event.status,
-      note: event.note,
-      created_at: event.created_at,
-    })),
+    events: shapeEvents(eventsByOrder.get(order.id)),
   }));
 }

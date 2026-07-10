@@ -72,37 +72,43 @@ interface WebhookPayload {
  * processing is idempotent so redelivery never double-decrements stock.
  */
 export const webhookHandler: RequestHandler = async (req: Request, res: Response) => {
+  // --- Signature verification (400, no processing) --------------------
+  const signature = req.header('X-Razorpay-Signature') ?? '';
+  // With express.raw(), req.body is a Buffer of the exact request bytes.
+  const rawBody: Buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.from('');
+
+  const expected = crypto
+    .createHmac('sha256', config.razorpayWebhookSecret)
+    .update(rawBody)
+    .digest('hex');
+
+  if (!timingSafeStringEqual(expected, signature)) {
+    res.status(400).json({ success: false, message: 'Invalid webhook signature' });
+    return;
+  }
+
+  let payload: WebhookPayload;
   try {
-    const signature = req.header('X-Razorpay-Signature') ?? '';
-    // With express.raw(), req.body is a Buffer of the exact request bytes.
-    const rawBody: Buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.from('');
+    payload = JSON.parse(rawBody.toString('utf8')) as WebhookPayload;
+  } catch {
+    res.status(400).json({ success: false, message: 'Malformed webhook body' });
+    return;
+  }
 
-    const expected = crypto
-      .createHmac('sha256', config.razorpayWebhookSecret)
-      .update(rawBody)
-      .digest('hex');
+  const event = payload.event;
+  const entity = payload.payload?.payment?.entity;
+  const razorpayOrderId = entity?.order_id;
+  const razorpayPaymentId = entity?.id;
 
-    if (!timingSafeStringEqual(expected, signature)) {
-      res.status(400).json({ success: false, message: 'Invalid webhook signature' });
-      return;
-    }
-
-    let payload: WebhookPayload;
-    try {
-      payload = JSON.parse(rawBody.toString('utf8')) as WebhookPayload;
-    } catch {
-      res.status(400).json({ success: false, message: 'Malformed webhook body' });
-      return;
-    }
-
-    const event = payload.event;
-    const entity = payload.payload?.payment?.entity;
-    const razorpayOrderId = entity?.order_id;
-    const razorpayPaymentId = entity?.id;
-
+  // --- Event dispatch -------------------------------------------------
+  // Return 200 when the event was processed, is an idempotent replay
+  // (alreadyPaid), or is a genuine no-op/unknown event. Return 500 ONLY when
+  // processing throws (e.g. a transient DB error) so Razorpay retries the
+  // delivery — capture is idempotent, so a retry is safe.
+  try {
     if (event === 'payment.captured' && razorpayOrderId && razorpayPaymentId) {
       // Same idempotent capture path as verify. A replay finds the order
-      // already `paid` and returns without touching stock.
+      // already `paid` and returns (alreadyPaid) without touching stock.
       await capturePayment({ razorpayOrderId, razorpayPaymentId });
     } else if (event === 'payment.failed' && razorpayOrderId) {
       await markPaymentFailed(razorpayOrderId);
@@ -111,11 +117,10 @@ export const webhookHandler: RequestHandler = async (req: Request, res: Response
 
     res.status(200).json({ success: true });
   } catch (err) {
-    // Never leak internals; log for reconciliation. Still 200 so Razorpay
-    // does not hammer redeliveries for a transient server-side issue —
-    // reconciliation is handled out of band and capture is idempotent.
+    // Never leak internals. Ask Razorpay to retry — the capture is
+    // idempotent and any partial state is reconciled on the next delivery.
     console.error('[webhook] processing error:', err instanceof Error ? err.message : err);
-    res.status(200).json({ success: true });
+    res.status(500).json({ success: false, message: 'Webhook processing failed' });
   }
 };
 

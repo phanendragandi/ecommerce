@@ -109,12 +109,14 @@ export async function capturePayment(params: CaptureParams): Promise<CaptureResu
       p_quantity: item.quantity,
     });
     if (rpcError) {
-      // The buyer is already charged — never silently swallow. Flag loudly
-      // for manual review; the order stays `paid`.
+      // The buyer is already charged — never silently swallow. Emit a
+      // structured, greppable ALERT marker so ops can alarm on it; the order
+      // stays `paid` and is flagged for manual review below.
       stockDecrementFailed = true;
       console.error(
-        `[capturePayment] STOCK DECREMENT FAILED post-payment — manual review required. ` +
-          `order=${order.id} product=${item.product_id} qty=${item.quantity}: ${rpcError.message}`,
+        `[ALERT][manual-review] stock decrement failed post-payment ` +
+          `order=${order.id} product=${item.product_id} qty=${item.quantity} ` +
+          `reason=${rpcError.message}`,
       );
     }
   }
