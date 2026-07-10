@@ -117,8 +117,17 @@ export const webhookHandler: RequestHandler = async (req: Request, res: Response
 
     res.status(200).json({ success: true });
   } catch (err) {
-    // Never leak internals. Ask Razorpay to retry — the capture is
-    // idempotent and any partial state is reconciled on the next delivery.
+    if (err instanceof HttpError && err.status === 404) {
+      // Unknown order is TERMINAL, not transient: our orders row is always
+      // created before the Razorpay order, so this id will never exist. Ack
+      // 200 so Razorpay stops retrying; log a structured warning for audit.
+      console.warn(`[webhook] unknown order acknowledged order_id=${razorpayOrderId ?? 'unknown'}`);
+      res.status(200).json({ success: true });
+      return;
+    }
+    // Transient error (DB load failure, HttpError 500, unexpected throw):
+    // never leak internals; ask Razorpay to retry — capture is idempotent and
+    // any partial state is reconciled on the next delivery.
     console.error('[webhook] processing error:', err instanceof Error ? err.message : err);
     res.status(500).json({ success: false, message: 'Webhook processing failed' });
   }

@@ -166,6 +166,68 @@ describe('/api/payments', () => {
         });
       expect(res.status).toBe(401);
     });
+
+    it('400 on a missing field (zod)', async () => {
+      const client = authedClient();
+      mockedSupabaseAdmin.mockReturnValue(client as any);
+
+      const res = await request(app)
+        .post('/api/payments/verify')
+        .set('Authorization', 'Bearer t')
+        .send({ razorpay_order_id: RZP_ORDER_ID, razorpay_payment_id: RZP_PAYMENT_ID });
+
+      expect(res.status).toBe(400);
+    });
+
+    it('404 when no order matches this Razorpay order id for the caller', async () => {
+      const client = authedClient();
+      client.from.mockReturnValueOnce(ok(null)); // owner-scoped load finds nothing
+      mockedSupabaseAdmin.mockReturnValue(client as any);
+
+      const res = await request(app)
+        .post('/api/payments/verify')
+        .set('Authorization', 'Bearer t')
+        .send({
+          razorpay_order_id: RZP_ORDER_ID,
+          razorpay_payment_id: RZP_PAYMENT_ID,
+          razorpay_signature: verifySignature(RZP_ORDER_ID, RZP_PAYMENT_ID),
+        });
+
+      expect(res.status).toBe(404);
+      expect(client.rpc).not.toHaveBeenCalled();
+    });
+
+    it('order still ends up paid (flagged for manual review) when the stock RPC fails post-charge', async () => {
+      const client = authedClient();
+      client.from
+        .mockReturnValueOnce(ok({ id: ORDER_ID, user_id: 'user-1', status: 'pending', payment_status: 'pending' })) // load
+        .mockReturnValueOnce(ok({ id: ORDER_ID })) // CAS update won
+        .mockReturnValueOnce(ok([{ product_id: PRODUCT_ID, quantity: 2 }])) // items
+        .mockReturnValueOnce(ok(null)) // order_events insert
+        .mockReturnValueOnce(ok(null)); // cart clear
+      client.rpc.mockResolvedValue({ data: null, error: { message: 'insufficient stock' } });
+      mockedSupabaseAdmin.mockReturnValue(client as any);
+
+      const res = await request(app)
+        .post('/api/payments/verify')
+        .set('Authorization', 'Bearer t')
+        .send({
+          razorpay_order_id: RZP_ORDER_ID,
+          razorpay_payment_id: RZP_PAYMENT_ID,
+          razorpay_signature: verifySignature(RZP_ORDER_ID, RZP_PAYMENT_ID),
+        });
+
+      // The buyer was already charged — the order must still be reported as
+      // paid even though the stock decrement failed (never silently revert
+      // a successful charge).
+      expect(res.status).toBe(200);
+      expect(res.body.data.status).toBe('paid');
+      const eventsInsertCall = (client.from.mock.results[3].value as {
+        calls: Array<{ method: string; args: unknown[] }>;
+      }).calls.find((c) => c.method === 'insert');
+      const eventRow = eventsInsertCall?.args[0] as { note?: string };
+      expect(eventRow.note).toMatch(/manual review/i);
+    });
   });
 
   describe('POST /webhook', () => {
@@ -306,6 +368,41 @@ describe('/api/payments', () => {
         .send(raw);
 
       expect(res.status).toBe(500);
+      expect(client.rpc).not.toHaveBeenCalled();
+    });
+
+    it('400 on a validly-signed but malformed JSON body', async () => {
+      const client = createMockClient();
+      mockedSupabaseAdmin.mockReturnValue(client as any);
+
+      const raw = '{not valid json';
+      const res = await request(app)
+        .post('/api/payments/webhook')
+        .set('Content-Type', 'application/json')
+        .set('X-Razorpay-Signature', webhookSignature(raw))
+        .send(raw);
+
+      expect(res.status).toBe(400);
+      expect(client.rpc).not.toHaveBeenCalled();
+    });
+
+    // A valid signature over an order_id that never resolves to a DB row is
+    // TERMINAL (our orders row is created before the Razorpay order, so there
+    // is no arrival race). capturePayment's 404 is acknowledged with 200 so
+    // Razorpay stops retrying — no retry storm — and nothing is mutated.
+    it('acknowledges an unknown order with 200 (terminal, no retry) and no mutation', async () => {
+      const client = createMockClient();
+      client.from.mockReturnValueOnce(ok(null)); // order lookup: no match
+      mockedSupabaseAdmin.mockReturnValue(client as any);
+
+      const raw = capturePayload();
+      const res = await request(app)
+        .post('/api/payments/webhook')
+        .set('Content-Type', 'application/json')
+        .set('X-Razorpay-Signature', webhookSignature(raw))
+        .send(raw);
+
+      expect(res.status).toBe(200);
       expect(client.rpc).not.toHaveBeenCalled();
     });
   });
