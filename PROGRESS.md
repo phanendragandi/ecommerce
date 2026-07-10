@@ -58,9 +58,11 @@ Commits: `19d129f` baseline · `c224ee1` scaffold cleanup · `3909c99` server sc
 - Remaining non-blocking: `react-hooks/exhaustive-deps` warning in order-placed page.
 - ⏸ Live-stack items deferred to deploy window (need user credentials): Gate G1 db push + RLS spot-check, Gate G3B Razorpay e2e, Gate G4 SQL reconciliation, manual regression run.
 
-## Pending
+## Phase 6 — Deploy 🔄 (artifacts authored; execution blocked on user)
 
-- ⬜ Phase 6 — Deploy (`devops-engineer`) — Gate G6 — **blocked on user:** Supabase project link + env values, Razorpay keys (test for e2e, live for prod), Hostinger VPS access + domain.
+- ✅ Authored: `.vercelignore` + minimal `vercel.json` (build-skip for server-only commits), `deploy/ecosystem.config.js` (PM2), `deploy/nginx-quickcart-api.conf` (loopback proxy, 25m body for 4×5MB uploads, unbuffered webhook location for raw-body HMAC), `deploy/setup-vps.sh` (Node 20/UFW/fail2ban/certbot/PM2), `deploy/deploy.sh` (test-gated zero-downtime reload + health check), `.github/workflows/ci.yml` (server + web jobs), `deploy/RUNBOOK.md` (ordered go-live checklist incl. Gate G6 smoke test + ops notes).
+- ⏸ **Execution blocked on user:** (1) Supabase project + `npx supabase link` + env values → then Gate G1 db push + RLS spot-check + Gate G4 SQL reconciliation; (2) Razorpay test keys → Gate G3B e2e; (3) Hostinger **VPS** (confirm plan is VPS, not shared) + domain + DNS → RUNBOOK → Gate G6 smoke test.
+- ⚠️ Reminder: rotate the old Clerk/Mongo/Cloudinary credentials exposed in the pre-fix `.env` before go-live.
 
 ## Needed from user
 

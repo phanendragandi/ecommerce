@@ -1,0 +1,26 @@
+# QuickCart — Vercel root deploy is the Next.js app only.
+# Everything below is either the Hostinger-VPS API, infra tooling, or docs
+# that Vercel never needs to see. Keeping the upload small also keeps Hobby
+# build times down.
+
+# Express API — deployed separately to the Hostinger VPS, never to Vercel.
+/server
+
+# Supabase migrations/seed — applied via `supabase db push`, not a build input.
+/supabase
+
+# Manual/QA scripts — not part of the Next.js build.
+/qa
+
+# VPS/Nginx/PM2/CI infra files authored for the VPS + GitHub Actions, not Vercel.
+/deploy
+
+# Repo docs not needed at build time.
+ORCHESTRATION.md
+PROGRESS.md
+README-SETUP.txt
+CODE_OF_CONDUCT.md
+CONTRIBUTING.md
+
+# Agent definitions — internal tooling only.
+/.claude

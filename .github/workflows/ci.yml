@@ -1,0 +1,114 @@
+name: CI
+
+# PRs into main and pushes to main both run lint + build + tests. There is
+# no deploy job wired up by default — deploys happen by SSHing to the VPS
+# and running deploy/deploy.sh (manually, or via the commented-out optional
+# job template at the bottom of this file once you're ready to automate
+# it). Vercel deploys itself via its GitHub integration and needs nothing
+# from this workflow.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  server:
+    name: server (lint types, build, test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck (tsc --noEmit)
+        run: npm run typecheck
+
+      - name: Build (tsc)
+        run: npm run build
+
+      - name: Test (vitest + supertest)
+        run: npm test
+
+  web:
+    name: web (lint, build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build (next build)
+        # NEXT_PUBLIC_* vars are inlined into the client bundle at build
+        # time, so `next build` needs *some* value present even in CI (it
+        # does not need to be a real, working project — CI never talks to
+        # Supabase/Razorpay, it only proves the build compiles). These are
+        # public-shaped placeholders (anon key / publishable key patterns),
+        # not secrets — safe to commit. Never put SUPABASE_SERVICE_ROLE_KEY
+        # or RAZORPAY_KEY_SECRET here or anywhere in this repo.
+        run: npm run build
+        env:
+          NEXT_PUBLIC_CURRENCY: $
+          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-build-placeholder-anon-key
+          NEXT_PUBLIC_API_URL: https://api.placeholder.example.com
+          NEXT_PUBLIC_RAZORPAY_KEY_ID: rzp_test_placeholder
+
+# ---------------------------------------------------------------------------
+# OPTIONAL — SSH deploy on push to main. Disabled by default (commented out).
+# Enable once the VPS is provisioned (deploy/setup-vps.sh has run) and you've
+# added these repo secrets (Settings -> Secrets and variables -> Actions):
+#   VPS_HOST        the VPS's IP or hostname
+#   VPS_USER         the non-root deploy user (e.g. "deploy")
+#   VPS_SSH_KEY      private key matching a public key in that user's
+#                    ~/.ssh/authorized_keys (generate a dedicated
+#                    deploy-only keypair, don't reuse a personal key)
+#   VPS_APP_DIR      e.g. /var/www/quickcart (optional — deploy.sh defaults
+#                    to this same path)
+#
+# To enable: uncomment the job below, and consider gating it with a required
+# PR review / branch protection on main so an SSH deploy only ever runs
+# after human-reviewed merges.
+#
+#   deploy:
+#     name: deploy (VPS, main only)
+#     needs: [server, web]
+#     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+#     runs-on: ubuntu-latest
+#     steps:
+#       - name: SSH and run deploy.sh
+#         uses: appleboy/ssh-action@v1
+#         with:
+#           host: ${{ secrets.VPS_HOST }}
+#           username: ${{ secrets.VPS_USER }}
+#           key: ${{ secrets.VPS_SSH_KEY }}
+#           script: |
+#             set -e
+#             APP_DIR="${{ secrets.VPS_APP_DIR }}"
+#             "${APP_DIR:-/var/www/quickcart}/deploy/deploy.sh"
+# ---------------------------------------------------------------------------
