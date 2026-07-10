@@ -44,6 +44,12 @@ export class QueryBuilder implements PromiseLike<MockResult> {
   neq(...args: unknown[]): this {
     return this.chain('neq', args);
   }
+  in(...args: unknown[]): this {
+    return this.chain('in', args);
+  }
+  limit(...args: unknown[]): this {
+    return this.chain('limit', args);
+  }
   ilike(...args: unknown[]): this {
     return this.chain('ilike', args);
   }
@@ -95,14 +101,17 @@ export function createStorageBucketMock(overrides?: Partial<MockStorageBucket>):
 
 export interface MockSupabaseClient {
   from: Mock;
+  rpc: Mock;
   auth: { getUser: Mock };
   storage: { from: Mock };
 }
 
-/** A fresh, unconfigured mock Supabase client. Configure `.from`/`.auth`/`.storage` per test. */
+/** A fresh, unconfigured mock Supabase client. Configure `.from`/`.rpc`/`.auth`/`.storage` per test. */
 export function createMockClient(): MockSupabaseClient {
   return {
     from: vi.fn(),
+    // Default: RPCs (e.g. decrement_stock) succeed. Override per test.
+    rpc: vi.fn().mockResolvedValue({ data: null, error: null }),
     auth: { getUser: vi.fn() },
     storage: { from: vi.fn(() => createStorageBucketMock()) },
   };
