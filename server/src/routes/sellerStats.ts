@@ -32,6 +32,41 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
+const PAGE_SIZE = 1000;
+
+interface PageResult<T> {
+  data: T[] | null;
+  error: { message: string } | null;
+}
+
+/**
+ * Supabase caps `select()` results at 1000 rows by default. A seller with
+ * more than 1000 matching `order_items` rows would otherwise be silently
+ * truncated (under-reported revenue/units/series/top-products). This walks
+ * `.range(offset, offset + PAGE_SIZE - 1)` pages, accumulating rows until a
+ * short (or empty) page confirms the end of the result set.
+ */
+async function fetchAllPages<T>(
+  fetchPage: (from: number, to: number) => PromiseLike<PageResult<T>>,
+  errorMessage: string,
+): Promise<T[]> {
+  const all: T[] = [];
+  let offset = 0;
+  for (;;) {
+    const { data, error } = await fetchPage(offset, offset + PAGE_SIZE - 1);
+    if (error) {
+      throw new HttpError(500, errorMessage);
+    }
+    const page = data ?? [];
+    all.push(...page);
+    if (page.length < PAGE_SIZE) {
+      break;
+    }
+    offset += PAGE_SIZE;
+  }
+  return all;
+}
+
 interface SellerProductRow {
   id: string;
   name: string;
@@ -90,15 +125,17 @@ sellerStatsRouter.get('/', async (req, res, next) => {
     }
 
     // order_items joined to orders (status/payment_status only — no other
-    // seller's product/line-item data is ever selected here).
-    const { data: itemsData, error: itemsError } = await admin
-      .from('order_items')
-      .select('order_id, quantity, price_at_purchase, orders!inner(status, payment_status)')
-      .in('product_id', productIds);
-    if (itemsError) {
-      throw new HttpError(500, 'Failed to load seller order data');
-    }
-    const items = (itemsData ?? []) as unknown as OrderItemWithOrderEmbed[];
+    // seller's product/line-item data is ever selected here). Paginated —
+    // see fetchAllPages — so sellers with >1000 line items aren't truncated.
+    const items = await fetchAllPages<OrderItemWithOrderEmbed>(
+      (from, to) =>
+        admin
+          .from('order_items')
+          .select('order_id, quantity, price_at_purchase, orders!inner(status, payment_status)')
+          .in('product_id', productIds)
+          .range(from, to) as unknown as PromiseLike<PageResult<OrderItemWithOrderEmbed>>,
+      'Failed to load seller order data',
+    );
 
     const orderStatusById = new Map<string, string>();
     const paidOrderIds = new Set<string>();
@@ -229,14 +266,15 @@ sellerReportsRouter.get('/sales', async (req, res, next) => {
     const productIds = ((productsData ?? []) as Array<{ id: string }>).map((p) => p.id);
 
     if (productIds.length > 0) {
-      const { data: itemsData, error: itemsError } = await admin
-        .from('order_items')
-        .select('order_id, quantity, price_at_purchase, orders!inner(created_at, payment_status)')
-        .in('product_id', productIds);
-      if (itemsError) {
-        throw new HttpError(500, 'Failed to load sales data');
-      }
-      const items = (itemsData ?? []) as unknown as SalesOrderItemEmbed[];
+      const items = await fetchAllPages<SalesOrderItemEmbed>(
+        (from, to) =>
+          admin
+            .from('order_items')
+            .select('order_id, quantity, price_at_purchase, orders!inner(created_at, payment_status)')
+            .in('product_id', productIds)
+            .range(from, to) as unknown as PromiseLike<PageResult<SalesOrderItemEmbed>>,
+        'Failed to load sales data',
+      );
 
       for (const item of items) {
         const order = item.orders;
@@ -302,14 +340,15 @@ sellerReportsRouter.get('/top-products', async (req, res, next) => {
     const totals = new Map<string, { units: number; revenue: number }>();
 
     if (productIds.length > 0) {
-      const { data: itemsData, error: itemsError } = await admin
-        .from('order_items')
-        .select('product_id, quantity, price_at_purchase, orders!inner(created_at, payment_status)')
-        .in('product_id', productIds);
-      if (itemsError) {
-        throw new HttpError(500, 'Failed to load top-products data');
-      }
-      const items = (itemsData ?? []) as unknown as TopProductsItemEmbed[];
+      const items = await fetchAllPages<TopProductsItemEmbed>(
+        (from, to) =>
+          admin
+            .from('order_items')
+            .select('product_id, quantity, price_at_purchase, orders!inner(created_at, payment_status)')
+            .in('product_id', productIds)
+            .range(from, to) as unknown as PromiseLike<PageResult<TopProductsItemEmbed>>,
+        'Failed to load top-products data',
+      );
 
       for (const item of items) {
         const order = item.orders;

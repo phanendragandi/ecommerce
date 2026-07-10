@@ -180,6 +180,41 @@ describe('/api/seller/stats', () => {
     expect(res.body.data.aov).toBe(100);
   });
 
+  it('paginates order_items past the Supabase 1000-row default cap (full page + partial page both aggregated)', async () => {
+    const client = sellerClient();
+    const fullPage = Array.from({ length: 1000 }, (_, i) => ({
+      order_id: `order-${i}`,
+      quantity: 1,
+      price_at_purchase: 1,
+      orders: { status: 'paid', payment_status: 'paid' },
+    }));
+    const partialPage = Array.from({ length: 5 }, (_, i) => ({
+      order_id: `order-${1000 + i}`,
+      quantity: 1,
+      price_at_purchase: 1,
+      orders: { status: 'paid', payment_status: 'paid' },
+    }));
+
+    client.from
+      .mockReturnValueOnce(ok({ role: 'seller' })) // requireSeller
+      .mockReturnValueOnce(ok([{ id: PRODUCT_ID, name: 'Widget', stock: 20, is_active: true }])) // seller products
+      .mockReturnValueOnce(ok(fullPage)) // order_items page 1: exactly 1000 rows — must fetch another page
+      .mockReturnValueOnce(ok(partialPage)); // order_items page 2: short page — stop here
+    mockedSupabaseAdmin.mockReturnValue(client as any);
+
+    const res = await request(app).get('/api/seller/stats').set('Authorization', 'Bearer t');
+
+    expect(res.status).toBe(200);
+    // Both pages' 1005 rows must be aggregated, not just the first 1000.
+    expect(res.body.data.revenue).toBe(1005);
+    expect(res.body.data.order_count).toBe(1005);
+    expect(res.body.data.paid_order_count).toBe(1005);
+    expect(res.body.data.units_sold).toBe(1005);
+    // Exactly 4 `.from()` calls: requireSeller + products + 2 order_items pages
+    // (no unnecessary 3rd page fetch after the short page).
+    expect(client.from).toHaveBeenCalledTimes(4);
+  });
+
   it('401 without a token', async () => {
     const res = await request(app).get('/api/seller/stats');
     expect(res.status).toBe(401);

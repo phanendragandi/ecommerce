@@ -131,6 +131,96 @@ describe('/api/orders', () => {
       expect(res.status).toBe(400);
       expect(rzpCreate).not.toHaveBeenCalled();
     });
+
+    it('404 when the address belongs to another user (IDOR attempt)', async () => {
+      const client = authedClient();
+      // The query is scoped by .eq('user_id', callerId); an address owned by
+      // someone else never matches, so the mock returns no row.
+      client.from.mockReturnValueOnce(ok(null));
+      mockedSupabaseAdmin.mockReturnValue(client as any);
+
+      const res = await request(app)
+        .post('/api/orders/checkout')
+        .set('Authorization', 'Bearer t')
+        .send({ address_id: ADDRESS_ID, items: [{ product_id: PRODUCT_ID, quantity: 1 }] });
+
+      expect(res.status).toBe(404);
+      expect(rzpCreate).not.toHaveBeenCalled();
+    });
+
+    it('400 when a cart item references a product that went inactive between cart and checkout', async () => {
+      const client = authedClient();
+      client.from
+        .mockReturnValueOnce(ok({ id: ADDRESS_ID })) // address ownership
+        // The products query filters `.eq('is_active', true)`, so a
+        // deactivated product simply never comes back.
+        .mockReturnValueOnce(ok([]));
+      mockedSupabaseAdmin.mockReturnValue(client as any);
+
+      const res = await request(app)
+        .post('/api/orders/checkout')
+        .set('Authorization', 'Bearer t')
+        .send({ address_id: ADDRESS_ID, items: [{ product_id: PRODUCT_ID, quantity: 1 }] });
+
+      expect(res.status).toBe(400);
+      expect(res.body.message).toMatch(/unavailable/i);
+      expect(rzpCreate).not.toHaveBeenCalled();
+    });
+
+    it('400 when the computed order total is zero (e.g. a zero-priced product row)', async () => {
+      const client = authedClient();
+      client.from
+        .mockReturnValueOnce(ok({ id: ADDRESS_ID }))
+        .mockReturnValueOnce(
+          ok([{ id: PRODUCT_ID, name: 'Freebie', price: 0, offer_price: null, stock: 10 }]),
+        );
+      mockedSupabaseAdmin.mockReturnValue(client as any);
+
+      const res = await request(app)
+        .post('/api/orders/checkout')
+        .set('Authorization', 'Bearer t')
+        .send({ address_id: ADDRESS_ID, items: [{ product_id: PRODUCT_ID, quantity: 2 }] });
+
+      expect(res.status).toBe(400);
+      expect(res.body.message).toMatch(/greater than zero/i);
+      expect(rzpCreate).not.toHaveBeenCalled();
+    });
+
+    it('400 on a malformed uuid in address_id', async () => {
+      const client = authedClient();
+      mockedSupabaseAdmin.mockReturnValue(client as any);
+
+      const res = await request(app)
+        .post('/api/orders/checkout')
+        .set('Authorization', 'Bearer t')
+        .send({ address_id: 'not-a-uuid', items: [{ product_id: PRODUCT_ID, quantity: 1 }] });
+
+      expect(res.status).toBe(400);
+    });
+
+    it('400 on a malformed uuid in items[].product_id', async () => {
+      const client = authedClient();
+      mockedSupabaseAdmin.mockReturnValue(client as any);
+
+      const res = await request(app)
+        .post('/api/orders/checkout')
+        .set('Authorization', 'Bearer t')
+        .send({ address_id: ADDRESS_ID, items: [{ product_id: 'not-a-uuid', quantity: 1 }] });
+
+      expect(res.status).toBe(400);
+    });
+
+    it('400 on a zero quantity line item', async () => {
+      const client = authedClient();
+      mockedSupabaseAdmin.mockReturnValue(client as any);
+
+      const res = await request(app)
+        .post('/api/orders/checkout')
+        .set('Authorization', 'Bearer t')
+        .send({ address_id: ADDRESS_ID, items: [{ product_id: PRODUCT_ID, quantity: 0 }] });
+
+      expect(res.status).toBe(400);
+    });
   });
 
   describe('GET /', () => {
@@ -174,6 +264,17 @@ describe('/api/orders', () => {
       expect(order.items[0].price_at_purchase).toBe(50);
       expect(order.events).toHaveLength(2);
       expect(order.events[1].status).toBe('paid');
+    });
+
+    it('200 returns an empty list when the caller has no orders', async () => {
+      const client = authedClient();
+      client.from.mockReturnValueOnce(ok([]));
+      mockedSupabaseAdmin.mockReturnValue(client as any);
+
+      const res = await request(app).get('/api/orders').set('Authorization', 'Bearer t');
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.orders).toEqual([]);
     });
 
     it('401 without a token', async () => {

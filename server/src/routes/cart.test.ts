@@ -76,4 +76,66 @@ describe('/api/cart', () => {
     const res = await request(app).put('/api/cart').send({ items: [] });
     expect(res.status).toBe(401);
   });
+
+  it('PUT 200 with an empty items array clears the cart without inserting rows', async () => {
+    const client = authedClient();
+    client.from.mockReturnValueOnce(ok(null)); // delete existing rows only — no insert call
+    mockedSupabaseAdmin.mockReturnValue(client as any);
+
+    const res = await request(app)
+      .put('/api/cart')
+      .set('Authorization', 'Bearer t')
+      .send({ items: [] });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.items).toEqual([]);
+    expect(client.from).toHaveBeenCalledTimes(1);
+  });
+
+  it('PUT 400 on a zero quantity item', async () => {
+    const client = authedClient();
+    mockedSupabaseAdmin.mockReturnValue(client as any);
+
+    const res = await request(app)
+      .put('/api/cart')
+      .set('Authorization', 'Bearer t')
+      .send({ items: [{ product_id: PRODUCT_ID, quantity: 0 }] });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('PUT 400 on a malformed product_id uuid', async () => {
+    const client = authedClient();
+    mockedSupabaseAdmin.mockReturnValue(client as any);
+
+    const res = await request(app)
+      .put('/api/cart')
+      .set('Authorization', 'Bearer t')
+      .send({ items: [{ product_id: 'not-a-uuid', quantity: 1 }] });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('PUT ignores a client-supplied user_id and always writes rows scoped to the caller (IDOR attempt)', async () => {
+    const client = authedClient();
+    client.from
+      .mockReturnValueOnce(ok(null)) // delete existing rows
+      .mockReturnValueOnce(ok([{ product_id: PRODUCT_ID, quantity: 1, user_id: 'user-1' }])); // insert
+    mockedSupabaseAdmin.mockReturnValue(client as any);
+
+    const res = await request(app)
+      .put('/api/cart')
+      .set('Authorization', 'Bearer t')
+      // Attempt to plant another user's id on the row — the schema has no
+      // such field, so it must be silently dropped and the row always
+      // carries the authenticated caller's id (verified in the route,
+      // which spreads only { user_id: req.user!.id, product_id, quantity }).
+      .send({ items: [{ product_id: PRODUCT_ID, quantity: 1, user_id: 'victim-user' }] });
+
+    expect(res.status).toBe(200);
+    // The insert call's row payload is the second `from('cart_items')` call.
+    const insertCall = client.from.mock.results[1].value as { calls: Array<{ method: string; args: unknown[] }> };
+    const insertArgs = insertCall.calls.find((c) => c.method === 'insert')?.args as [Array<Record<string, unknown>>];
+    expect(insertArgs[0]).toEqual([{ user_id: 'user-1', product_id: PRODUCT_ID, quantity: 1 }]);
+  });
 });

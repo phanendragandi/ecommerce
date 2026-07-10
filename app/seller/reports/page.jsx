@@ -22,8 +22,16 @@ const PRESETS = [
   { key: '90d', label: '90D', days: 90 },
 ]
 
+// Prevent CSV/formula injection: a cell that starts with =, +, -, @, or a
+// tab/CR can be interpreted as a live formula by Excel/Sheets when the file
+// is opened. Prefixing with a single quote forces it to be read as text.
+const FORMULA_INJECTION_RE = /^[=+\-@\t\r]/
+
 function csvEscape(value) {
-  const s = String(value ?? '')
+  let s = String(value ?? '')
+  if (FORMULA_INJECTION_RE.test(s)) {
+    s = `'${s}`
+  }
   if (/[",\n]/.test(s)) {
     return `"${s.replace(/"/g, '""')}"`
   }
