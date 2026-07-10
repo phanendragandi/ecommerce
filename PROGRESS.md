@@ -44,9 +44,14 @@ Commits: `19d129f` baseline · `c224ee1` scaffold cleanup · `3909c99` server sc
 - ⏸ **Gate G3B live half blocked on user:** Razorpay test-mode e2e (pay twice, webhook replay, tamper test) needs Razorpay test keys + linked Supabase.
 - Known limitations (documented): stock validated at checkout but reserved only at capture; multi-seller orders share one fulfillment status.
 
+## Phase 4 — Seller dashboard & reports ✅ (Gate G4 static PASSED — 2026-07-10)
+
+- ✅ `/api/seller/stats` (revenue, order_count, paid_order_count, AOV per paid order, units, low-stock ≤5, status breakdown), `/api/seller/reports/sales` (day/week/month buckets, zero-filled), `/api/seller/reports/top-products` — all seller-isolated (own order_items only, never whole-order amounts).
+- ✅ Dashboard page (stat cards + revenue AreaChart + status BarChart + low-stock), Reports page (date presets, interval, tables, client-side CSV export); Add Product moved to `/seller/add-product`; Sidebar updated. Recharts added.
+- ✅ **Gate G4 (static):** 79/79 tests (incl. seller-isolation + paid-only AOV proofs), tsc clean, root build green. Reconciliation SQL prepared in commit history for the live-DB check once Supabase is linked.
+
 ## Pending
 
-- ⬜ Phase 4 — Seller dashboard (`dashboard-engineer`) — Gate G4
 - ⬜ Phase 5 — QA + security release gate
 - ⬜ Phase 6 — Deploy (`devops-engineer`) — Gate G6
 

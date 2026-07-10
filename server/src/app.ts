@@ -12,6 +12,7 @@ import { paymentsRouter, webhookHandler } from './routes/payments.js';
 import { productsRouter } from './routes/products.js';
 import { sellerOrdersRouter } from './routes/sellerOrders.js';
 import { sellerProductsRouter } from './routes/sellerProducts.js';
+import { sellerReportsRouter, sellerStatsRouter } from './routes/sellerStats.js';
 
 export function createApp(): express.Express {
   const app = express();
@@ -59,6 +60,10 @@ export function createApp(): express.Express {
   app.use('/api/orders', ordersRouter);
   app.use('/api/payments', paymentsRouter);
   app.use('/api/seller/orders', sellerOrdersRouter);
+
+  // Phase 4 (dashboard-engineer): seller analytics.
+  app.use('/api/seller/stats', sellerStatsRouter);
+  app.use('/api/seller/reports', sellerReportsRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);
