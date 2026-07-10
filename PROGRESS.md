@@ -13,10 +13,13 @@ Status legend: ✅ done · 🔄 in progress · ⏸ blocked on user · ⬜ pendin
 
 Commits: `19d129f` baseline · `c224ee1` scaffold cleanup · `3909c99` server scaffold · `4dab756` frontend plumbing.
 
-## Phase 1 — Data layer (`supabase-architect`) 🔄
+## Phase 1 — Data layer (`supabase-architect`) 🔄 (authored + audited; awaiting db push)
 
-- 🔄 Migrations (tables, enum, signup trigger, `decrement_stock`, indexes), full RLS set, `product-images` bucket, seed script.
-- ⏸ **Gate G1 blocked on user:** needs Supabase project created + `npx supabase link` before `supabase db push`; then security-auditor RLS spot-check.
+- ✅ Migrations authored: schema (7 tables + `order_status` enum + indexes + partial-unique Razorpay ids), `handle_new_user` signup trigger, atomic `decrement_stock` RPC (raises P0001, service-role-only), full RLS set (client-read-only orders/order_items/order_events, role-escalation guard, recursion-safe SECURITY DEFINER helpers), `product-images` bucket + policies.
+- ✅ Seed: `supabase/seed.sql` (10 products from assets.js, demo seller, local-only guard). Run via `npx supabase db reset`.
+- ✅ **Security audit (static): PASS** — no Critical/High. Findings fixed in place (migrations unapplied, so in-place edits are safe): storage write policies now owner-per-path (`<seller_id>/<filename>` — **Phase 2 upload endpoint must follow this path contract**); role guard made NULL-safe; seed refuses non-local DBs + random demo password.
+- ℹ️ Deferred to owning phases: reject `*` in CORS allowlist (Phase 2), remove Clerk CDN URL from `assets/assets.js` (Phase 3A).
+- ⏸ **Gate G1 blocked on user:** needs Supabase project + `npx supabase link`, then `npx supabase db push` + live RLS spot-check (verification SQL prepared).
 
 ## Pending
 

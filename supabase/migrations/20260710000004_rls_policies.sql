@@ -118,7 +118,9 @@ language plpgsql
 set search_path = ''
 as $$
 begin
-  if new.role is distinct from old.role and auth.role() <> 'service_role' then
+  -- coalesce guards against auth.role() returning NULL: a NULL would make the
+  -- AND short-circuit and wrongly ALLOW the role change. Treat NULL as non-service.
+  if new.role is distinct from old.role and coalesce(auth.role(), '') <> 'service_role' then
     raise exception 'role can only be changed by the service role'
       using errcode = '42501';
   end if;

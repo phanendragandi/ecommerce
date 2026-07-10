@@ -1,5 +1,17 @@
 -- QuickCart — seed data (NOT a migration).
 --
+-- ############################################################################
+-- # WARNING — LOCAL DEVELOPMENT ONLY. NEVER RUN AGAINST HOSTED / STAGING /    #
+-- # PRODUCTION.                                                               #
+-- #                                                                           #
+-- # This file inserts a demo seller directly into auth.users with a KNOWN     #
+-- # (though long/random-looking) password and a PRE-CONFIRMED email. Running  #
+-- # it against any shared or internet-reachable database would create a       #
+-- # login-able account with publicly documented credentials. A guard DO       #
+-- # block below aborts if the server does not look like a local instance,     #
+-- # but treat that as defense-in-depth, NOT permission to run this in prod.   #
+-- ############################################################################
+--
 -- HOW TO RUN
 -- ----------
 -- This file follows Supabase's local seeding convention: it is executed
@@ -7,8 +19,8 @@
 --
 --     npx supabase db reset          # local: applies migrations + runs seed.sql
 --
--- It is idempotent, so you may also run it by hand against any database where
--- the migrations have been applied, e.g.:
+-- It is idempotent, so you may also run it by hand against a LOCAL database
+-- where the migrations have been applied, e.g.:
 --
 --     psql "$DATABASE_URL" -f supabase/seed.sql
 --
@@ -28,6 +40,33 @@
 
 begin;
 
+-- Safety guard: refuse to run unless the server looks local. Local Supabase
+-- (Docker) is reached over loopback / private ranges, or a unix socket
+-- (inet_server_addr() IS NULL). A hosted database presents a public address,
+-- which aborts the seed. Override intentionally only if you know what you are
+-- doing by: set quickcart.allow_seed = 'on';
+do $$
+declare
+  v_addr inet := inet_server_addr();
+begin
+  if coalesce(current_setting('quickcart.allow_seed', true), '') = 'on' then
+    return;  -- explicit operator override
+  end if;
+
+  if v_addr is not null
+     and not (v_addr <<= inet '127.0.0.0/8'   -- loopback
+           or v_addr <<= inet '10.0.0.0/8'    -- private (docker/LAN)
+           or v_addr <<= inet '172.16.0.0/12' -- private (docker default bridge)
+           or v_addr <<= inet '192.168.0.0/16'-- private (LAN)
+           or v_addr <<= inet '::1/128')      -- IPv6 loopback
+  then
+    raise exception
+      'Refusing to seed: server address % is not local. This seed creates a demo user with known credentials and must NOT run against hosted/prod. Set quickcart.allow_seed=''on'' to override.',
+      host(v_addr);
+  end if;
+end;
+$$;
+
 -- Demo seller identity (fixed so the seed stays idempotent).
 -- 00000000-0000-4000-a000-000000000001  → demo seller
 -- pgcrypto (for crypt()) ships with Supabase; ensure it is available.
@@ -43,7 +82,9 @@ values (
   '00000000-0000-0000-0000-000000000000',
   '00000000-0000-4000-a000-000000000001',
   'authenticated', 'authenticated', 'demo-seller@quickcart.test',
-  crypt('demo-seller-password', gen_salt('bf')), now(),
+  -- Long random-looking password. Still LOCAL-ONLY: it is committed to the repo,
+  -- so it is not a secret. Rotate/replace before using this account anywhere real.
+  crypt('Qc-Demo-Local-Only-9f3b7c1e5a284d06b1e7f4c2a9d80351', gen_salt('bf')), now(),
   '{"provider":"email","providers":["email"]}'::jsonb,
   '{"name":"QuickCart Demo Seller"}'::jsonb,
   now(), now()
