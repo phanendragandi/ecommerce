@@ -18,7 +18,13 @@ export const config = {
   corsOrigins: (process.env.CORS_ORIGIN ?? 'http://localhost:3000')
     .split(',')
     .map((origin) => origin.trim())
-    .filter(Boolean),
+    .filter(Boolean)
+    .map((origin) => {
+      if (origin === '*') {
+        throw new Error('CORS_ORIGIN must not contain a wildcard "*" origin');
+      }
+      return origin;
+    }),
   // Lazy getters: secrets are only demanded when a code path actually
   // needs them, so tests and the health check don't require a full env.
   get supabaseUrl(): string {

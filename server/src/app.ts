@@ -4,6 +4,11 @@ import helmet from 'helmet';
 import { config } from './config.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { apiLimiter } from './middleware/rateLimit.js';
+import { addressesRouter } from './routes/addresses.js';
+import { cartRouter } from './routes/cart.js';
+import { meRouter } from './routes/me.js';
+import { productsRouter } from './routes/products.js';
+import { sellerProductsRouter } from './routes/sellerProducts.js';
 
 export function createApp(): express.Express {
   const app = express();
@@ -32,9 +37,14 @@ export function createApp(): express.Express {
     res.json({ success: true, status: 'ok' });
   });
 
-  // Route mounts land here in Phases 2–4:
-  //   /api/products, /api/cart, /api/addresses, /api/orders,
-  //   /api/payments, /api/seller, /api/me
+  app.use('/api/products', productsRouter);
+  app.use('/api/me', meRouter);
+  app.use('/api/addresses', addressesRouter);
+  app.use('/api/cart', cartRouter);
+  app.use('/api/seller/products', sellerProductsRouter);
+
+  // Remaining mounts land here in Phase 3B (payments-engineer owns):
+  //   /api/orders, /api/payments, /api/seller/orders
 
   app.use(notFoundHandler);
   app.use(errorHandler);

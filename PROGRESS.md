@@ -21,9 +21,16 @@ Commits: `19d129f` baseline · `c224ee1` scaffold cleanup · `3909c99` server sc
 - ℹ️ Deferred to owning phases: reject `*` in CORS allowlist (Phase 2), remove Clerk CDN URL from `assets/assets.js` (Phase 3A).
 - ⏸ **Gate G1 blocked on user:** needs Supabase project + `npx supabase link`, then `npx supabase db push` + live RLS spot-check (verification SQL prepared).
 
+## Phase 2 — Core API (`backend-engineer`) ✅ (Gate G2 PASSED — 2026-07-10)
+
+- ✅ `requireAuth` (Supabase JWT via `auth.getUser`) + `requireSeller` (role from DB, never client-supplied).
+- ✅ Routes: public `GET /api/products[/:id]` (active only), `GET /api/me`, addresses CRUD, cart sync `GET/PUT /api/cart`, seller product CRUD (soft delete) + `POST /:id/images` (multer, 4×5MB, jpeg/png/webp, storage keys `<seller_id>/<uuid>.<ext>` per RLS path contract).
+- ✅ zod validation on every body/query/param; strict rate limit on all mutations; CORS now rejects `*`.
+- ✅ **Gate G2:** tsc strict clean; 34/34 vitest+supertest green (happy + 401/403 + zod 400 per route). Orchestrator reviewed auth/ownership/upload paths against CLAUDE.md — clean.
+- Note: response envelope is `{ success, data }` (matches scaffold convention).
+
 ## Pending
 
-- ⬜ Phase 2 — Core API (`backend-engineer`) — Gate G2
 - ⬜ Phase 3A — Frontend wiring (`frontend-engineer`) — Gate G3A
 - ⬜ Phase 3B — Payments & tracking (`payments-engineer`) — Gate G3B
 - ⬜ Phase 4 — Seller dashboard (`dashboard-engineer`) — Gate G4
