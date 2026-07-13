@@ -64,6 +64,16 @@ Commits: `19d129f` baseline · `c224ee1` scaffold cleanup · `3909c99` server sc
 - ⏸ **Execution blocked on user:** (1) Supabase project + `npx supabase link` + env values → then Gate G1 db push + RLS spot-check + Gate G4 SQL reconciliation; (2) Razorpay test keys → Gate G3B e2e; (3) Hostinger **VPS** (confirm plan is VPS, not shared) + domain + DNS → RUNBOOK → Gate G6 smoke test.
 - ⚠️ Reminder: rotate the old Clerk/Mongo/Cloudinary credentials exposed in the pre-fix `.env` before go-live.
 
+## Phase 7 — Local live-stack bring-up + e2e ✅ (2026-07-13)
+
+- ✅ Hosted Supabase linked live (project `oxtiixbserrwysidklfx`, ap-south-1; direct DB host is IPv6-only — use the `aws-1-ap-south-1` session pooler from IPv4 machines). **Gate G1 done:** all 5 migrations pushed; demo seller + 10-product catalog seeded (seller password rotated to a private value, shared in chat only).
+- ✅ Both apps running locally against the live stack; full auth chain verified (login → JWT → `/api/me` role=seller).
+- ✅ Playwright e2e suite added (`e2e/`, 13 tests: storefront, auth, cart sync round-trip, seller dashboard/add-product/upload/delete, validation guards) — 13/13 green. Creds in git-ignored `.env.e2e`.
+- ✅ Bugs found & fixed: seller-gate race in AppContext (`isSeller` now derived synchronously — hard nav to `/seller/*` bounced legit sellers); Add Product image UX (client-side type/size validation, ≥1 image required, orphan rollback on failed upload, blob URL leak); rate limiters split (strict 30/15min now only checkout+verify; routine writes 120/15min; dev 100×).
+- ✅ Dummy product catalog removed from `assets/` (incl. Clerk CDN refs); catalog fully DB-driven.
+- ⚠️ Do not run `next build` while `next dev` is serving — they share `.next` and the dev server breaks transiently.
+- Still pending: Razorpay test keys (checkout/payments untestable until then), Gate G3B e2e, Gate G4 SQL reconciliation, production deploy (Phase 6 runbook).
+
 ## Needed from user
 
 1. Supabase project: create it, then `npx supabase link --project-ref <ref>`; fill `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` in `.env` and `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` in `server/.env`.
