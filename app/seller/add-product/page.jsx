@@ -1,10 +1,14 @@
 'use client'
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { assets } from "@/assets/assets";
 import Image from "next/image";
 import { api } from "@/lib/api";
 import { createClient } from "@/lib/supabase/client";
 import toast from "react-hot-toast";
+
+// Must match the server's upload rules (multer: jpeg/png/webp, 5MB, 4 files).
+const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
 const AddProduct = () => {
 
@@ -16,6 +20,31 @@ const AddProduct = () => {
   const [offerPrice, setOfferPrice] = useState('');
   const [stock, setStock] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  // Stable preview URLs per file; created once per selection and revoked on
+  // change/unmount (creating them inline in render leaks a blob: URL per render).
+  const previews = useMemo(
+    () => files.map((f) => (f ? URL.createObjectURL(f) : null)),
+    [files]
+  );
+  useEffect(() => {
+    return () => previews.forEach((url) => url && URL.revokeObjectURL(url));
+  }, [previews]);
+
+  const handleFileSelect = (index, file) => {
+    if (!file) return;
+    if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
+      toast.error('Only JPEG, PNG, and WEBP images are allowed');
+      return;
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      toast.error('Each image must be 5MB or smaller');
+      return;
+    }
+    const updatedFiles = [...files];
+    updatedFiles[index] = file;
+    setFiles(updatedFiles);
+  };
 
   const resetForm = () => {
     setFiles([]);
@@ -94,8 +123,10 @@ const AddProduct = () => {
         try {
           await uploadImages(productId, imageFiles);
         } catch (uploadErr) {
-          toast.error(uploadErr.message || 'Product saved, but image upload failed');
-          resetForm();
+          // Roll back the just-created product so a failed upload doesn't
+          // leave an imageless orphan in the catalog.
+          try { await api.delete(`/api/seller/products/${productId}`); } catch { /* best effort */ }
+          toast.error(uploadErr.message || 'Image upload failed — product was not saved');
           return;
         }
       }
@@ -118,15 +149,17 @@ const AddProduct = () => {
 
             {[...Array(4)].map((_, index) => (
               <label key={index} htmlFor={`image${index}`}>
-                <input onChange={(e) => {
-                  const updatedFiles = [...files];
-                  updatedFiles[index] = e.target.files[0];
-                  setFiles(updatedFiles);
-                }} type="file" id={`image${index}`} hidden />
+                <input
+                  onChange={(e) => handleFileSelect(index, e.target.files[0])}
+                  type="file"
+                  accept={ACCEPTED_IMAGE_TYPES.join(',')}
+                  id={`image${index}`}
+                  hidden
+                />
                 <Image
                   key={index}
                   className="max-w-24 cursor-pointer"
-                  src={files[index] ? URL.createObjectURL(files[index]) : assets.upload_area}
+                  src={previews[index] ?? assets.upload_area}
                   alt=""
                   width={100}
                   height={100}
