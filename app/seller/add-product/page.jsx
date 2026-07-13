@@ -104,6 +104,10 @@ const AddProduct = () => {
       toast.error('Stock must be a whole number of 0 or more');
       return;
     }
+    if (files.filter(Boolean).length === 0) {
+      toast.error('Add at least one product image');
+      return;
+    }
 
     setSubmitting(true);
     try {

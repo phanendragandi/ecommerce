@@ -94,7 +94,11 @@ export const AppContextProvider = (props) => {
     const [profile, setProfile] = useState(null)
     const [authLoading, setAuthLoading] = useState(true)
     const [profileLoading, setProfileLoading] = useState(false)
-    const [isSeller, setIsSeller] = useState(false)
+    // Derived synchronously from profile — deriving it via useEffect opened a
+    // one-render window where profileLoading was false but isSeller hadn't
+    // updated yet, and the /seller layout redirected legitimate sellers away
+    // on any hard navigation.
+    const isSeller = profile?.role === 'seller'
 
     const [cartItems, setCartItems] = useState({})
 
@@ -145,10 +149,6 @@ export const AppContextProvider = (props) => {
             setProfileLoading(false)
         }
     }, [])
-
-    useEffect(() => {
-        setIsSeller(profile?.role === 'seller')
-    }, [profile])
 
     // ---- Addresses ------------------------------------------------------
     // Fetched lazily (on login, or on demand via refresh) so OrderSummary
@@ -364,7 +364,7 @@ export const AppContextProvider = (props) => {
         currency, router,
         // auth/session
         user, profile, authLoading, profileLoading, logout,
-        isSeller, setIsSeller,
+        isSeller,
         userData: profile, fetchUserData,
         // addresses
         addresses, addressesLoading, fetchAddresses,
