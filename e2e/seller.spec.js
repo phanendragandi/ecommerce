@@ -1,4 +1,34 @@
-const { test, expect } = require('@playwright/test');
+const { test, expect, request: pwRequest } = require('@playwright/test');
+
+const API = 'http://localhost:4000';
+
+// Failed runs can abort between creating a test product and deleting it via
+// the UI — sweep any survivors so they never accumulate in the live catalog.
+test.afterAll(async () => {
+  const ctx = await pwRequest.newContext();
+  try {
+    const auth = await ctx.post(
+      `${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/token?grant_type=password`,
+      {
+        headers: { apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY },
+        data: {
+          email: process.env.E2E_SELLER_EMAIL,
+          password: process.env.E2E_SELLER_PASSWORD,
+        },
+      }
+    );
+    const token = (await auth.json()).access_token;
+    const headers = { Authorization: `Bearer ${token}` };
+
+    const res = await ctx.get(`${API}/api/seller/products`, { headers });
+    const products = (await res.json())?.data?.products ?? [];
+    for (const p of products.filter((p) => /^E2E Test Product/.test(p.name))) {
+      await ctx.delete(`${API}/api/seller/products/${p.id}`, { headers });
+    }
+  } finally {
+    await ctx.dispose();
+  }
+});
 
 // 1x1 transparent PNG.
 const TINY_PNG = Buffer.from(

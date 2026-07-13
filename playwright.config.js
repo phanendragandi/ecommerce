@@ -3,9 +3,12 @@ const { defineConfig } = require('@playwright/test');
 const fs = require('fs');
 const path = require('path');
 
-// Load git-ignored e2e credentials (.env.e2e) without a dotenv dependency.
-const envFile = path.join(__dirname, '.env.e2e');
-if (fs.existsSync(envFile)) {
+// Load git-ignored env files without a dotenv dependency: .env.e2e for test
+// credentials, .env for the public Supabase URL/anon key (used by the
+// leftover-product sweep in seller.spec.js).
+for (const name of ['.env.e2e', '.env']) {
+  const envFile = path.join(__dirname, name);
+  if (!fs.existsSync(envFile)) continue;
   for (const line of fs.readFileSync(envFile, 'utf8').split(/\r?\n/)) {
     const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
     if (m && process.env[m[1]] === undefined) process.env[m[1]] = m[2];

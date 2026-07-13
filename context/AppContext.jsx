@@ -114,6 +114,11 @@ export const AppContextProvider = (props) => {
     const cartHydratedRef = useRef(false)
     const syncTimerRef = useRef(null)
 
+    // Live mirror of cartItems so async flows (hydration) can see mutations
+    // made after they started without re-subscribing to state.
+    const cartItemsRef = useRef({})
+    useEffect(() => { cartItemsRef.current = cartItems }, [cartItems])
+
     // ---- Products ---------------------------------------------------------
 
     const fetchProductData = useCallback(async () => {
@@ -186,6 +191,7 @@ export const AppContextProvider = (props) => {
         cartHydratedRef.current = false
         if (nextUser) {
             const guestCart = readGuestCart()
+            const preHydrate = cartItemsRef.current
             let serverMap = {}
             try {
                 const res = await api.get('/api/cart')
@@ -193,7 +199,15 @@ export const AppContextProvider = (props) => {
             } catch (err) {
                 toast.error(err.message || 'Failed to load your cart')
             }
-            const merged = mergeCartMaps(serverMap, guestCart, productsRef.current)
+            // Anything added while the server fetch was in flight would be
+            // silently clobbered by the server copy — fold the delta in.
+            const during = {}
+            for (const [id, qty] of Object.entries(cartItemsRef.current)) {
+                const added = qty - (preHydrate[id] || 0)
+                if (added > 0) during[id] = added
+            }
+            let merged = mergeCartMaps(serverMap, guestCart, productsRef.current)
+            merged = mergeCartMaps(merged, during, productsRef.current)
             setCartItems(merged)
             writeGuestCart({})
             cartHydratedRef.current = true
