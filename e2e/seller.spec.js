@@ -1,40 +1,19 @@
 const { test, expect, request: pwRequest } = require('@playwright/test');
-
-const API = 'http://localhost:4000';
+const { TINY_PNG, getSellerToken, sweepE2EProducts } = require('./apiHelpers');
 
 // Failed runs can abort between creating a test product and deleting it via
 // the UI — sweep any survivors so they never accumulate in the live catalog.
+// (Scoped to this spec's products; catalog fixtures are removed in
+// global.teardown.js.)
 test.afterAll(async () => {
   const ctx = await pwRequest.newContext();
   try {
-    const auth = await ctx.post(
-      `${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/token?grant_type=password`,
-      {
-        headers: { apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY },
-        data: {
-          email: process.env.E2E_SELLER_EMAIL,
-          password: process.env.E2E_SELLER_PASSWORD,
-        },
-      }
-    );
-    const token = (await auth.json()).access_token;
-    const headers = { Authorization: `Bearer ${token}` };
-
-    const res = await ctx.get(`${API}/api/seller/products`, { headers });
-    const products = (await res.json())?.data?.products ?? [];
-    for (const p of products.filter((p) => /^E2E Test Product/.test(p.name))) {
-      await ctx.delete(`${API}/api/seller/products/${p.id}`, { headers });
-    }
+    const token = await getSellerToken(ctx);
+    await sweepE2EProducts(ctx, token, /^E2E Test Product/);
   } finally {
     await ctx.dispose();
   }
 });
-
-// 1x1 transparent PNG.
-const TINY_PNG = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
-  'base64'
-);
 
 test.describe('seller (logged in)', () => {
   test('dashboard renders stats', async ({ page }) => {

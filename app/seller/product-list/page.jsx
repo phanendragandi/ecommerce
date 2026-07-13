@@ -15,6 +15,7 @@ const normalizeProduct = (p) => ({
   price: p.price,
   offerPrice: p.offer_price ?? p.price,
   image: Array.isArray(p.images) && p.images.length > 0 ? p.images : [assets.upload_area],
+  isActive: p.is_active,
 });
 
 const ProductList = () => {
@@ -40,14 +41,32 @@ const ProductList = () => {
   }
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Remove this product from your store?')) return;
+    if (!window.confirm('Delete this product? Products that have been ordered are deactivated instead, to preserve order history.')) return;
     setDeletingId(id)
     try {
-      await api.delete(`/api/seller/products/${id}`)
-      toast.success('Product removed')
-      setProducts((prev) => prev.filter((p) => p._id !== id))
+      const res = await api.delete(`/api/seller/products/${id}`)
+      if (res?.data?.mode === 'deactivated') {
+        toast.success('Product has orders — deactivated instead (hidden from the store)')
+        setProducts((prev) => prev.map((p) => (p._id === id ? { ...p, isActive: false } : p)))
+      } else {
+        toast.success('Product permanently deleted')
+        setProducts((prev) => prev.filter((p) => p._id !== id))
+      }
     } catch (err) {
       toast.error(err.message || 'Failed to remove product')
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
+  const handleRestore = async (id) => {
+    setDeletingId(id)
+    try {
+      await api.patch(`/api/seller/products/${id}`, { is_active: true })
+      toast.success('Product restored to the store')
+      setProducts((prev) => prev.map((p) => (p._id === id ? { ...p, isActive: true } : p)))
+    } catch (err) {
+      toast.error(err.message || 'Failed to restore product')
     } finally {
       setDeletingId(null)
     }
@@ -100,6 +119,9 @@ const ProductList = () => {
                     </div>
                     <span className="truncate w-full">
                       {product.name}
+                      {!product.isActive && (
+                        <span className="ml-2 px-2 py-0.5 text-xs rounded-full bg-gray-200 text-gray-500 align-middle">Inactive</span>
+                      )}
                     </span>
                   </td>
                   <td className="px-4 py-3 max-sm:hidden">{product.category}</td>
@@ -114,13 +136,23 @@ const ProductList = () => {
                           alt="redirect_icon"
                         />
                       </button>
-                      <button
-                        onClick={() => handleDelete(product._id)}
-                        disabled={deletingId === product._id}
-                        className="px-3 py-2 border border-gray-300 text-gray-600 rounded-md hover:bg-gray-50 transition disabled:opacity-60"
-                      >
-                        {deletingId === product._id ? '...' : 'Delete'}
-                      </button>
+                      {product.isActive ? (
+                        <button
+                          onClick={() => handleDelete(product._id)}
+                          disabled={deletingId === product._id}
+                          className="px-3 py-2 border border-gray-300 text-gray-600 rounded-md hover:bg-gray-50 transition disabled:opacity-60"
+                        >
+                          {deletingId === product._id ? '...' : 'Delete'}
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handleRestore(product._id)}
+                          disabled={deletingId === product._id}
+                          className="px-3 py-2 border border-green-600/40 text-green-700 rounded-md hover:bg-green-50 transition disabled:opacity-60"
+                        >
+                          {deletingId === product._id ? '...' : 'Restore'}
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>

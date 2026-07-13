@@ -142,11 +142,12 @@ describe('/api/seller/products', () => {
     expect(res.status).toBe(400);
   });
 
-  it('DELETE 200 soft-deletes an owned product', async () => {
+  it('DELETE 200 permanently deletes a product with no orders', async () => {
     const client = sellerClient();
     client.from
       .mockReturnValueOnce(ok({ role: 'seller' }))
-      .mockReturnValueOnce(ok({ id: PRODUCT_ID, seller_id: 'seller-1', is_active: false }));
+      .mockReturnValueOnce(ok(null, 0)) // order_items reference count
+      .mockReturnValueOnce(ok({ id: PRODUCT_ID, seller_id: 'seller-1' })); // hard delete
     mockedSupabaseAdmin.mockReturnValue(client as any);
 
     const res = await request(app)
@@ -154,6 +155,23 @@ describe('/api/seller/products', () => {
       .set('Authorization', 'Bearer t');
 
     expect(res.status).toBe(200);
+    expect(res.body.data.mode).toBe('deleted');
+  });
+
+  it('DELETE 200 deactivates a product that has been ordered', async () => {
+    const client = sellerClient();
+    client.from
+      .mockReturnValueOnce(ok({ role: 'seller' }))
+      .mockReturnValueOnce(ok(null, 3)) // order_items reference count
+      .mockReturnValueOnce(ok({ id: PRODUCT_ID, seller_id: 'seller-1', is_active: false })); // deactivate
+    mockedSupabaseAdmin.mockReturnValue(client as any);
+
+    const res = await request(app)
+      .delete(`/api/seller/products/${PRODUCT_ID}`)
+      .set('Authorization', 'Bearer t');
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.mode).toBe('deactivated');
     expect(res.body.data.product.is_active).toBe(false);
   });
 

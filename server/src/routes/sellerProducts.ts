@@ -80,14 +80,45 @@ sellerProductsRouter.patch('/:id', mutationLimiter, async (req, res, next) => {
   }
 });
 
-// DELETE /api/seller/products/:id — soft delete (is_active = false).
+// DELETE /api/seller/products/:id — permanently removes the product when it
+// has never been ordered; otherwise deactivates it (order history must keep
+// referencing the row). `data.mode` tells the client which one happened.
 sellerProductsRouter.delete('/:id', mutationLimiter, async (req, res, next) => {
   try {
     const { id } = productIdParamSchema.parse(req.params);
 
+    const { count, error: refError } = await supabaseAdmin()
+      .from('order_items')
+      .select('*', { count: 'exact', head: true })
+      .eq('product_id', id);
+
+    if (refError) {
+      throw new HttpError(500, 'Failed to delete product');
+    }
+
+    if ((count ?? 0) > 0) {
+      const { data, error } = await supabaseAdmin()
+        .from('products')
+        .update({ is_active: false })
+        .eq('id', id)
+        .eq('seller_id', req.user!.id)
+        .select('*')
+        .maybeSingle();
+
+      if (error) {
+        throw new HttpError(500, 'Failed to delete product');
+      }
+      if (!data) {
+        throw new HttpError(404, 'Product not found');
+      }
+
+      res.json({ success: true, data: { mode: 'deactivated', product: data } });
+      return;
+    }
+
     const { data, error } = await supabaseAdmin()
       .from('products')
-      .update({ is_active: false })
+      .delete()
       .eq('id', id)
       .eq('seller_id', req.user!.id)
       .select('*')
@@ -100,7 +131,7 @@ sellerProductsRouter.delete('/:id', mutationLimiter, async (req, res, next) => {
       throw new HttpError(404, 'Product not found');
     }
 
-    res.json({ success: true, data: { product: data } });
+    res.json({ success: true, data: { mode: 'deleted', product: data } });
   } catch (err) {
     next(err);
   }

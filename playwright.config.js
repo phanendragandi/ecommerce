@@ -18,6 +18,7 @@ for (const name of ['.env.e2e', '.env']) {
 module.exports = defineConfig({
   testDir: './e2e',
   outputDir: './e2e-results/artifacts',
+  globalTeardown: './e2e/global.teardown.js',
   timeout: 90_000,
   expect: { timeout: 15_000 },
   // Single worker: tests share one seller account and one cart.
@@ -34,10 +35,12 @@ module.exports = defineConfig({
     screenshot: 'only-on-failure',
   },
   projects: [
-    { name: 'setup', testMatch: /auth\.setup\.js/ },
+    // Runs auth.setup.js then catalog.setup.js (alphabetical, 1 worker).
+    { name: 'setup', testMatch: /\.setup\.js$/ },
     {
       name: 'guest',
       testMatch: /(storefront|auth)\.spec\.js/,
+      dependencies: ['setup'],
       use: { browserName: 'chromium' },
     },
     {

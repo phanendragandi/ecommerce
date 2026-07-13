@@ -22,6 +22,7 @@ const productUpdateBase = z.object({
   price: z.number().positive().optional(),
   offer_price: z.number().positive().optional(),
   stock: z.number().int().min(0).optional(),
+  is_active: z.boolean().optional(),
 });
 
 export const productUpdateSchema = productUpdateBase
