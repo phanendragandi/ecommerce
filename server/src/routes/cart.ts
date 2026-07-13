@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { supabaseAdmin } from '../lib/supabaseAdmin.js';
 import { requireAuth } from '../middleware/auth.js';
 import { HttpError } from '../middleware/errorHandler.js';
-import { strictLimiter } from '../middleware/rateLimit.js';
+import { mutationLimiter } from '../middleware/rateLimit.js';
 import { cartPutSchema } from '../validators/cart.js';
 
 export const cartRouter = Router();
@@ -28,7 +28,7 @@ cartRouter.get('/', async (req, res, next) => {
 });
 
 // PUT /api/cart — replace the caller's entire cart.
-cartRouter.put('/', strictLimiter, async (req, res, next) => {
+cartRouter.put('/', mutationLimiter, async (req, res, next) => {
   try {
     const body = cartPutSchema.parse(req.body);
     const userId = req.user!.id;

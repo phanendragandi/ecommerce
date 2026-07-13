@@ -5,7 +5,7 @@ import multer, { MulterError } from 'multer';
 import { supabaseAdmin } from '../lib/supabaseAdmin.js';
 import { requireAuth, requireSeller } from '../middleware/auth.js';
 import { HttpError } from '../middleware/errorHandler.js';
-import { strictLimiter } from '../middleware/rateLimit.js';
+import { mutationLimiter } from '../middleware/rateLimit.js';
 import { productIdParamSchema } from '../validators/products.js';
 import { productCreateSchema, productUpdateSchema } from '../validators/sellerProducts.js';
 
@@ -33,7 +33,7 @@ sellerProductsRouter.get('/', async (req, res, next) => {
 });
 
 // POST /api/seller/products — create a product owned by the caller.
-sellerProductsRouter.post('/', strictLimiter, async (req, res, next) => {
+sellerProductsRouter.post('/', mutationLimiter, async (req, res, next) => {
   try {
     const body = productCreateSchema.parse(req.body);
 
@@ -54,7 +54,7 @@ sellerProductsRouter.post('/', strictLimiter, async (req, res, next) => {
 });
 
 // PATCH /api/seller/products/:id — partial update, ownership enforced in the query.
-sellerProductsRouter.patch('/:id', strictLimiter, async (req, res, next) => {
+sellerProductsRouter.patch('/:id', mutationLimiter, async (req, res, next) => {
   try {
     const { id } = productIdParamSchema.parse(req.params);
     const body = productUpdateSchema.parse(req.body);
@@ -81,7 +81,7 @@ sellerProductsRouter.patch('/:id', strictLimiter, async (req, res, next) => {
 });
 
 // DELETE /api/seller/products/:id — soft delete (is_active = false).
-sellerProductsRouter.delete('/:id', strictLimiter, async (req, res, next) => {
+sellerProductsRouter.delete('/:id', mutationLimiter, async (req, res, next) => {
   try {
     const { id } = productIdParamSchema.parse(req.params);
 
@@ -147,7 +147,7 @@ function uploadImagesMiddleware(req: Request, res: Response, next: NextFunction)
 
 sellerProductsRouter.post(
   '/:id/images',
-  strictLimiter,
+  mutationLimiter,
   uploadImagesMiddleware,
   async (req, res, next) => {
     try {

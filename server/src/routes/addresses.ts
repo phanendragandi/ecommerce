@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { supabaseAdmin } from '../lib/supabaseAdmin.js';
 import { requireAuth } from '../middleware/auth.js';
 import { HttpError } from '../middleware/errorHandler.js';
-import { strictLimiter } from '../middleware/rateLimit.js';
+import { mutationLimiter } from '../middleware/rateLimit.js';
 import { addressCreateSchema, addressIdParamSchema } from '../validators/addresses.js';
 
 export const addressesRouter = Router();
@@ -29,7 +29,7 @@ addressesRouter.get('/', async (req, res, next) => {
 });
 
 // POST /api/addresses — create an address owned by the caller.
-addressesRouter.post('/', strictLimiter, async (req, res, next) => {
+addressesRouter.post('/', mutationLimiter, async (req, res, next) => {
   try {
     const body = addressCreateSchema.parse(req.body);
 
@@ -50,7 +50,7 @@ addressesRouter.post('/', strictLimiter, async (req, res, next) => {
 });
 
 // DELETE /api/addresses/:id — owner-scoped delete.
-addressesRouter.delete('/:id', strictLimiter, async (req, res, next) => {
+addressesRouter.delete('/:id', mutationLimiter, async (req, res, next) => {
   try {
     const { id } = addressIdParamSchema.parse(req.params);
 

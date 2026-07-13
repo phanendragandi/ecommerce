@@ -4,7 +4,7 @@ import { supabaseAdmin } from '../lib/supabaseAdmin.js';
 import { isValidSellerTransition, type OrderStatus } from '../lib/orderStatus.js';
 import { requireAuth, requireSeller } from '../middleware/auth.js';
 import { HttpError } from '../middleware/errorHandler.js';
-import { strictLimiter } from '../middleware/rateLimit.js';
+import { mutationLimiter } from '../middleware/rateLimit.js';
 import { sellerOrderIdParamSchema, sellerOrderStatusSchema } from '../validators/sellerOrders.js';
 
 export const sellerOrdersRouter = Router();
@@ -126,7 +126,7 @@ sellerOrdersRouter.get('/', async (req, res, next) => {
 // PATCH /api/seller/orders/:id/status — drive a fulfilment transition.
 // Only valid graph transitions are allowed, and the seller must own at least
 // one product in the order. Every change inserts an order_events row.
-sellerOrdersRouter.patch('/:id/status', strictLimiter, async (req, res, next) => {
+sellerOrdersRouter.patch('/:id/status', mutationLimiter, async (req, res, next) => {
   try {
     const { id } = sellerOrderIdParamSchema.parse(req.params);
     const body = sellerOrderStatusSchema.parse(req.body);
